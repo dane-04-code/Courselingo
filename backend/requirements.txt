@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+pymupdf
+deepl
+python-multipart
+reportlab
+python-dotenv
