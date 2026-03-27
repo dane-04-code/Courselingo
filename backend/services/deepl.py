@@ -50,10 +50,33 @@ def translate_blocks(
 ) -> list[dict]:
     """
     Translate the ``text`` field of every block dict **in-place** and return
-    the list.  Non-text or empty blocks are left untouched.
+    the list.  Sends all texts to DeepL in a single batch call for speed.
     """
-    for block in blocks:
-        original = block.get("text", "")
-        if original.strip():
-            block["text"] = translate_text(original, target_lang, api_key)
+    # Collect indices and texts that actually need translation
+    to_translate: list[tuple[int, str]] = []
+    for i, block in enumerate(blocks):
+        text = block.get("text", "")
+        if text.strip():
+            to_translate.append((i, text))
+
+    if not to_translate:
+        return blocks
+
+    texts = [t for _, t in to_translate]
+
+    try:
+        translator = deepl.Translator(api_key)
+        results = translator.translate_text(texts, target_lang=target_lang)
+
+        # translate_text returns a single result for one string, list for many
+        if not isinstance(results, list):
+            results = [results]
+
+        for (idx, _), result in zip(to_translate, results):
+            blocks[idx]["text"] = result.text
+    except deepl.DeepLException as exc:
+        raise TranslationError(f"DeepL API error: {exc}") from exc
+    except Exception as exc:
+        raise TranslationError(f"Unexpected translation error: {exc}") from exc
+
     return blocks

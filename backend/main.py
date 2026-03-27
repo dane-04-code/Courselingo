@@ -5,6 +5,7 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from services.pdf_parser import extract_text_blocks, get_page_dimensions
@@ -25,6 +26,13 @@ logger = logging.getLogger("pdf_translate")
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="PDF Translation API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── Constants ────────────────────────────────────────────────────────
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
@@ -64,7 +72,9 @@ def _handle_pdf(
         raise HTTPException(status_code=500, detail=f"Unexpected error during translation: {exc}")
 
     try:
-        output = build_translated_pdf(translated_blocks, page_dims)
+        output = build_translated_pdf(
+            translated_blocks, page_dims, target_lang, original_pdf=file_bytes
+        )
     except Exception as exc:
         logger.exception("PDF reconstruction failed")
         raise HTTPException(status_code=500, detail=f"Failed to build translated PDF: {exc}")

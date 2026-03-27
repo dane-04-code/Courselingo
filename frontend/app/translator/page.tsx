@@ -174,7 +174,7 @@ export default function TranslatorPage() {
 
       const res = await axios.post(`${API_URL}/translate`, form, {
         responseType: "blob",
-        timeout: 120_000,
+        timeout: 300_000,
       });
 
       if (progressInterval.current) clearInterval(progressInterval.current);
