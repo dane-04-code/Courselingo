@@ -73,7 +73,7 @@ def _handle_pdf(
         raise HTTPException(status_code=500, detail=f"Unexpected error during translation: {exc}")
 
     try:
-        output = build_translated_pdf(translated_blocks, page_dims)
+        output = build_translated_pdf(translated_blocks, page_dims, file_bytes)
     except Exception as exc:
         logger.exception("PDF reconstruction failed")
         raise HTTPException(status_code=500, detail=f"Failed to build translated PDF: {exc}")
