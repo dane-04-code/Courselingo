@@ -2,10 +2,11 @@
 
 Strategy:
   1. Open the original PDF (preserves images, backgrounds, shapes).
-  2. For each translated text block, draw a white redact annotation over the
-     original text area.
-  3. Apply redacts — erases original text pixels, images untouched.
-  4. Insert translated text at the same position, shrinking font size to fit.
+  2. Pass 1 — measure: calculate the fitted font size for every block using a
+     scratch page, then normalise sizes within each (page, original_size) group
+     so visually related text stays uniform.
+  3. Pass 2 — render: redact original text and insert translated text at the
+     coordinated sizes.
 """
 
 from __future__ import annotations
@@ -64,12 +65,16 @@ def _map_font(pdf_font_name: str) -> str:
 
 
 # ── Unicode font resolution ──────────────────────────────────────────
+# Always prefer a Unicode TTF over Base14 fonts so that bullet points,
+# accented characters, and non-Latin glyphs all render correctly.
 
 _TTF_CANDIDATES = [
     "C:/Windows/Fonts/arial.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
 ]
+
+_UNIFONT_NAME = "unifont"
 
 
 def _find_unicode_font() -> str | None:
@@ -80,20 +85,52 @@ def _find_unicode_font() -> str | None:
     return None
 
 
-def _needs_unicode(text: str) -> bool:
-    try:
-        text.encode("latin-1")
-        return False
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        return True
-
-
-# ── Text insertion with font-size fitting ────────────────────────────
+# ── Font-size fitting ────────────────────────────────────────────────
 
 MIN_FONT_SIZE = 7.0
 
 
-def _insert_fitted_text(
+def _calc_fitted_size(
+    scratch_page: fitz.Page,
+    text: str,
+    fontname: str,
+    fontsize: float,
+    box_width: float,
+    box_height: float,
+    unicode_font_path: str | None,
+) -> float:
+    """
+    Return the largest font size <= *fontsize* at which *text* fits in the box.
+
+    Uses *scratch_page* for accurate measurement via insert_textbox() without
+    touching the real document. Multiple calls on the same scratch page are safe
+    because insert_textbox() measures purely geometrically.
+    """
+    measure_rect = fitz.Rect(0, 0, box_width, box_height)
+    size = fontsize
+
+    while size > MIN_FONT_SIZE:
+        if unicode_font_path:
+            rc = scratch_page.insert_textbox(
+                measure_rect, text,
+                fontsize=size,
+                fontfile=unicode_font_path,
+                fontname=_UNIFONT_NAME,
+            )
+        else:
+            rc = scratch_page.insert_textbox(
+                measure_rect, text,
+                fontsize=size,
+                fontname=fontname,
+            )
+        if rc >= 0:
+            return size
+        size -= 0.5
+
+    return MIN_FONT_SIZE
+
+
+def _insert_text(
     page: fitz.Page,
     rect: fitz.Rect,
     text: str,
@@ -101,44 +138,16 @@ def _insert_fitted_text(
     fontsize: float,
     unicode_font_path: str | None,
 ) -> None:
-    """
-    Insert *text* into *rect*, shrinking font size until it fits.
-    Falls back to clipping at MIN_FONT_SIZE if nothing fits.
-
-    insert_textbox() returns the unused vertical space (>=0) when text fits,
-    or a negative number when it overflows.
-    """
-    use_unicode = _needs_unicode(text)
-    size = fontsize
-
-    while size > MIN_FONT_SIZE:
-        if use_unicode and unicode_font_path:
-            rc = page.insert_textbox(
-                rect, text,
-                fontsize=size,
-                fontfile=unicode_font_path,
-                fontname="unifont",
-            )
-        else:
-            rc = page.insert_textbox(
-                rect, text,
-                fontsize=size,
-                fontname=fontname,
-            )
-        if rc >= 0:
-            return  # text fit
-        size -= 0.5
-
-    # Last resort: insert at minimum size (text will be clipped by rect)
-    if use_unicode and unicode_font_path:
+    """Insert *text* into *rect* at exactly *fontsize*."""
+    if unicode_font_path:
         page.insert_textbox(
             rect, text,
-            fontsize=MIN_FONT_SIZE,
+            fontsize=fontsize,
             fontfile=unicode_font_path,
-            fontname="unifont",
+            fontname=_UNIFONT_NAME,
         )
     else:
-        page.insert_textbox(rect, text, fontsize=MIN_FONT_SIZE, fontname=fontname)
+        page.insert_textbox(rect, text, fontsize=fontsize, fontname=fontname)
 
 
 # ── Public API ───────────────────────────────────────────────────────
@@ -153,8 +162,8 @@ def build_translated_pdf(
     translated text, preserving all images and non-text content.
 
     Args:
-        blocks:            Translated text blocks from pdf_parser + deepl.
-        page_dims:         Per-page {width, height} from get_page_dimensions().
+        blocks:             Translated text blocks from pdf_parser + deepl.
+        page_dims:          Per-page {width, height} (unused; kept for compat).
         original_pdf_bytes: Raw bytes of the uploaded PDF.
 
     Returns:
@@ -162,36 +171,66 @@ def build_translated_pdf(
     """
     unicode_font_path = _find_unicode_font()
 
-    # Group blocks by page
-    pages: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    for block in blocks:
-        pages[block["page_number"]].append(block)
+    # Index blocks by page for efficient lookup
+    pages: dict[int, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+    for i, block in enumerate(blocks):
+        pages[block["page_number"]].append((i, block))
 
+    # ── Pass 1: measure fitted sizes ─────────────────────────────────
+    # A single scratch page is reused for all measurements. insert_textbox()
+    # returns a geometric fit result regardless of existing content on the page.
+
+    fitted: list[float] = [0.0] * len(blocks)
+
+    with fitz.open() as scratch_doc:
+        scratch_page = scratch_doc.new_page(width=10000, height=10000)
+        for i, block in enumerate(blocks):
+            text = block["text"].strip()
+            if not text:
+                fitted[i] = block["font_size"]
+                continue
+            fitted[i] = _calc_fitted_size(
+                scratch_page,
+                text,
+                _map_font(block["font_name"]),
+                block["font_size"],
+                block["x1"] - block["x0"],
+                block["y1"] - block["y0"],
+                unicode_font_path,
+            )
+
+    # Normalise: blocks that shared the same original font size on the same
+    # page use the smallest fitted size across their group, keeping related
+    # text (e.g. all body paragraphs) visually uniform.
+    group_min: dict[tuple[int, float], float] = defaultdict(lambda: float("inf"))
+    for i, block in enumerate(blocks):
+        key = (block["page_number"], block["font_size"])
+        group_min[key] = min(group_min[key], fitted[i])
+
+    # ── Pass 2: redact + insert on the real document ─────────────────
     with fitz.open(stream=original_pdf_bytes, filetype="pdf") as doc:
         for page_idx in range(len(doc)):
-            page_blocks = pages.get(page_idx, [])
-            if not page_blocks:
+            page_entries = pages.get(page_idx, [])
+            if not page_entries:
                 continue
 
             page = doc[page_idx]
 
-            # 1. Mark all text areas for redaction (white fill erases original text)
-            for block in page_blocks:
+            # Redact original text areas (white fill, images untouched)
+            for _, block in page_entries:
                 rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
                 page.add_redact_annot(rect, fill=(1, 1, 1))
-
-            # 2. Apply redactions — removes text pixels, images=0 preserves images
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
-            # 3. Insert translated text into each cleared area
-            for block in page_blocks:
+            # Insert translated text at coordinated sizes
+            for i, block in page_entries:
                 text = block["text"].strip()
                 if not text:
                     continue
                 rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
                 fontname = _map_font(block["font_name"])
-                fontsize = block["font_size"]
-                _insert_fitted_text(page, rect, text, fontname, fontsize, unicode_font_path)
+                fontsize = group_min[(page_idx, block["font_size"])]
+                _insert_text(page, rect, text, fontname, fontsize, unicode_font_path)
 
         buf = io.BytesIO()
         doc.save(buf)

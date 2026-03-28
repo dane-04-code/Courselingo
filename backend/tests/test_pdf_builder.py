@@ -78,7 +78,7 @@ def test_build_returns_valid_pdf_bytes():
     assert result[:4] == b"%PDF"
     with fitz.open(stream=result, filetype="pdf") as doc:
         assert len(doc) == 1
-        page_text = doc[0].get_text()
+        page_text = doc[0].get_text().replace("\xa0", " ")
         assert "Hola mundo" in page_text
 
 
@@ -125,5 +125,52 @@ def test_build_with_long_text_does_not_raise():
     }]
     page_dims = [{"width": 612.0, "height": 792.0}]
     # Should not raise
+    result = build_translated_pdf(blocks, page_dims, original)
+    assert result[:4] == b"%PDF"
+
+
+def test_build_font_size_coordination():
+    """Blocks with the same original font size on the same page should all
+    use the minimum fitted size across the group."""
+    original = _make_pdf_with_text("Hello")
+    # One block needs to shrink (narrow box), one fits easily (wide box).
+    # Both have the same original font_size=12 → both should render at the
+    # shrunk size.
+    blocks = [
+        {
+            "page_number": 0,
+            "x0": 72.0, "y0": 50.0, "x1": 85.0, "y1": 70.0,  # narrow: forces shrink
+            "text": "Bonjour le monde comment allez vous",
+            "font_size": 12.0,
+            "font_name": "Helvetica",
+            "baseline_y": 60.0,
+        },
+        {
+            "page_number": 0,
+            "x0": 72.0, "y0": 100.0, "x1": 400.0, "y1": 120.0,  # wide: fits easily
+            "text": "Hi",
+            "font_size": 12.0,
+            "font_name": "Helvetica",
+            "baseline_y": 110.0,
+        },
+    ]
+    page_dims = [{"width": 612.0, "height": 792.0}]
+    # Should not raise; both blocks rendered at same coordinated size
+    result = build_translated_pdf(blocks, page_dims, original)
+    assert result[:4] == b"%PDF"
+
+
+def test_build_bullet_points_do_not_raise():
+    """Bullet characters (outside Latin-1) should render without crashing."""
+    original = _make_pdf_with_text("Hello")
+    blocks = [{
+        "page_number": 0,
+        "x0": 72.0, "y0": 88.0, "x1": 400.0, "y1": 200.0,
+        "text": "• First item\n• Second item\n• Third item",
+        "font_size": 12.0,
+        "font_name": "Helvetica",
+        "baseline_y": 100.0,
+    }]
+    page_dims = [{"width": 612.0, "height": 792.0}]
     result = build_translated_pdf(blocks, page_dims, original)
     assert result[:4] == b"%PDF"
