@@ -89,10 +89,6 @@ def _find_unicode_font() -> str | None:
 
 MIN_FONT_SIZE = 7.0
 
-# Font size at or below which a block is considered body text.
-# Body-text blocks on the same page share a single minimum fitted size.
-BODY_TEXT_MAX_SIZE = 14.0
-
 
 def _calc_fitted_size(
     scratch_page: fitz.Page,
@@ -205,19 +201,20 @@ def build_translated_pdf(
                 unicode_font_path,
             )
 
-    # Per-page body-text normalisation: find the minimum fitted size across all
-    # body-text blocks (font_size <= BODY_TEXT_MAX_SIZE) on each page and apply
-    # it uniformly so paragraphs look consistent regardless of translation length.
-    page_body_min: dict[int, float] = defaultdict(lambda: float("inf"))
+    # Per-group normalisation: blocks that share the same original font_size on
+    # the same page all render at the group's minimum fitted size.  This keeps
+    # body paragraphs consistent with each other, and headings consistent with
+    # other headings, without one group pulling down another.
+    group_min: dict[tuple[int, float], float] = defaultdict(lambda: float("inf"))
     for i, block in enumerate(blocks):
-        if block["font_size"] <= BODY_TEXT_MAX_SIZE and block["text"].strip():
-            page_body_min[block["page_number"]] = min(
-                page_body_min[block["page_number"]], fitted[i]
-            )
+        if block["text"].strip():
+            key = (block["page_number"], block["font_size"])
+            group_min[key] = min(group_min[key], fitted[i])
 
     for i, block in enumerate(blocks):
-        if block["font_size"] <= BODY_TEXT_MAX_SIZE and block["text"].strip():
-            fitted[i] = page_body_min[block["page_number"]]
+        if block["text"].strip():
+            key = (block["page_number"], block["font_size"])
+            fitted[i] = group_min[key]
 
     # ── Pass 2: redact + insert on the real document ─────────────────
     with fitz.open(stream=original_pdf_bytes, filetype="pdf") as doc:
