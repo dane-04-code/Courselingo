@@ -2,10 +2,11 @@
 
 Strategy:
   1. Open the original PDF (preserves images, backgrounds, shapes).
-  2. Pass 1 — measure: calculate the fitted font size for every block using a
-     scratch page. Each block is fitted independently.
-  3. Pass 2 — render: redact original text and insert translated text at each
-     block's individually fitted size.
+  2. Pass 1 — measure: calculate the fitted font size per block using a scratch
+     page, then apply threshold normalisation: blocks sharing the same original
+     font size on the same page are synced to the group minimum, but only when
+     the difference is <= SYNC_THRESHOLD pt. Large overflows stay isolated.
+  3. Pass 2 — render: redact original text and insert translated text.
 """
 
 from __future__ import annotations
@@ -87,6 +88,12 @@ def _find_unicode_font() -> str | None:
 # ── Font-size fitting ────────────────────────────────────────────────
 
 MIN_FONT_SIZE = 7.0
+
+# Blocks sharing the same original font size on the same page are synced to
+# the group minimum fitted size only when the reduction is within this threshold.
+# Larger reductions stay isolated so one badly overflowing block can't pull
+# everything else down with it.
+SYNC_THRESHOLD = 2.0
 
 
 def _calc_fitted_size(
@@ -198,6 +205,20 @@ def build_translated_pdf(
                 block["y1"] - block["y0"],
                 unicode_font_path,
             )
+
+    # Threshold normalisation: sync same-size groups per page, but only
+    # when the worst-case reduction is within SYNC_THRESHOLD points.
+    group_min: dict[tuple[int, float], float] = defaultdict(lambda: float("inf"))
+    for i, block in enumerate(blocks):
+        key = (block["page_number"], block["font_size"])
+        group_min[key] = min(group_min[key], fitted[i])
+
+    for i, block in enumerate(blocks):
+        key = (block["page_number"], block["font_size"])
+        reduction = block["font_size"] - group_min[key]
+        if reduction <= SYNC_THRESHOLD:
+            fitted[i] = group_min[key]
+        # else: large overflow — keep individual fitted size
 
     # ── Pass 2: redact + insert on the real document ─────────────────
     with fitz.open(stream=original_pdf_bytes, filetype="pdf") as doc:

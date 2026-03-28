@@ -95,21 +95,45 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
                 # Fallback: approximate baseline as top-of-box + font_size
                 baseline_y = bbox[1] + font_size
 
-            blocks.append(
-                asdict(
-                    TextBlock(
+            # If the block contains multiple list items (separated by \n),
+            # split into independent sub-blocks with proportional height.
+            # This ensures each item translates and renders separately so
+            # DeepL word-order shifts can't move text across item boundaries.
+            sub_texts = full_text.split("\n")
+            if len(sub_texts) > 1:
+                block_height = bbox[3] - bbox[1]
+                sub_h = block_height / len(sub_texts)
+                for idx, sub_text in enumerate(sub_texts):
+                    sub_text = sub_text.strip()
+                    if not sub_text:
+                        continue
+                    sub_y0 = bbox[1] + idx * sub_h
+                    sub_y1 = sub_y0 + sub_h
+                    blocks.append(asdict(TextBlock(
                         page_number=page_num,
-                        x0=bbox[0],
-                        y0=bbox[1],
-                        x1=bbox[2],
-                        y1=bbox[3],
-                        text=full_text,
+                        x0=bbox[0], y0=sub_y0,
+                        x1=bbox[2], y1=sub_y1,
+                        text=sub_text,
                         font_size=round(font_size, 2),
                         font_name=font_name,
-                        baseline_y=round(baseline_y, 2),
+                        baseline_y=round(sub_y0 + font_size, 2),
+                    )))
+            else:
+                blocks.append(
+                    asdict(
+                        TextBlock(
+                            page_number=page_num,
+                            x0=bbox[0],
+                            y0=bbox[1],
+                            x1=bbox[2],
+                            y1=bbox[3],
+                            text=full_text,
+                            font_size=round(font_size, 2),
+                            font_name=font_name,
+                            baseline_y=round(baseline_y, 2),
+                        )
                     )
                 )
-            )
 
     doc.close()
     return blocks
