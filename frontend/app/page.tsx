@@ -197,6 +197,7 @@ export default function Home() {
           <li><a href="#how">How it works</a></li>
           <li><a href="#pricing">Pricing</a></li>
           <li><a href="#faq">FAQ</a></li>
+          <li><a href="/blog">Blog</a></li>
           <li><a href="/login" className="nav-cta">Sign in →</a></li>
         </ul>
       </nav>
