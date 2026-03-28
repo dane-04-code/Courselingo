@@ -67,7 +67,6 @@ def _map_font(pdf_font_name: str) -> str:
 
 _TTF_CANDIDATES = [
     "C:/Windows/Fonts/arial.ttf",
-    "C:/Windows/Fonts/Arial.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
 ]
@@ -112,7 +111,7 @@ def _insert_fitted_text(
     use_unicode = _needs_unicode(text)
     size = fontsize
 
-    while size >= MIN_FONT_SIZE:
+    while size > MIN_FONT_SIZE:
         if use_unicode and unicode_font_path:
             rc = page.insert_textbox(
                 rect, text,
@@ -146,7 +145,7 @@ def _insert_fitted_text(
 
 def build_translated_pdf(
     blocks: list[dict[str, Any]],
-    page_dims: list[dict[str, float]],
+    page_dims: list[dict[str, float]],  # kept for call-site compatibility; dims read directly from doc
     original_pdf_bytes: bytes,
 ) -> bytes:
     """
@@ -161,7 +160,6 @@ def build_translated_pdf(
     Returns:
         Raw bytes of the translated PDF.
     """
-    doc = fitz.open(stream=original_pdf_bytes, filetype="pdf")
     unicode_font_path = _find_unicode_font()
 
     # Group blocks by page
@@ -169,32 +167,33 @@ def build_translated_pdf(
     for block in blocks:
         pages[block["page_number"]].append(block)
 
-    for page_idx in range(len(doc)):
-        page_blocks = pages.get(page_idx, [])
-        if not page_blocks:
-            continue
-
-        page = doc[page_idx]
-
-        # 1. Mark all text areas for redaction (white fill erases original text)
-        for block in page_blocks:
-            rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
-            page.add_redact_annot(rect, fill=(1, 1, 1))
-
-        # 2. Apply redactions — removes text pixels, images=0 preserves images
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-
-        # 3. Insert translated text into each cleared area
-        for block in page_blocks:
-            text = block["text"].strip()
-            if not text:
+    with fitz.open(stream=original_pdf_bytes, filetype="pdf") as doc:
+        for page_idx in range(len(doc)):
+            page_blocks = pages.get(page_idx, [])
+            if not page_blocks:
                 continue
-            rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
-            fontname = _map_font(block["font_name"])
-            fontsize = block["font_size"]
-            _insert_fitted_text(page, rect, text, fontname, fontsize, unicode_font_path)
 
-    buf = io.BytesIO()
-    doc.save(buf)
-    doc.close()
+            page = doc[page_idx]
+
+            # 1. Mark all text areas for redaction (white fill erases original text)
+            for block in page_blocks:
+                rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
+                page.add_redact_annot(rect, fill=(1, 1, 1))
+
+            # 2. Apply redactions — removes text pixels, images=0 preserves images
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+
+            # 3. Insert translated text into each cleared area
+            for block in page_blocks:
+                text = block["text"].strip()
+                if not text:
+                    continue
+                rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
+                fontname = _map_font(block["font_name"])
+                fontsize = block["font_size"]
+                _insert_fitted_text(page, rect, text, fontname, fontsize, unicode_font_path)
+
+        buf = io.BytesIO()
+        doc.save(buf)
+
     return buf.getvalue()
