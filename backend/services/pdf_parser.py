@@ -52,16 +52,19 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
 
             # Collect all spans to find dominant font
             all_spans: list[dict[str, Any]] = []
-            full_text_parts: list[str] = []
 
+            line_texts: list[str] = []
             for line in block.get("lines", []):
+                span_texts: list[str] = []
                 for span in line.get("spans", []):
                     span_text = span.get("text", "")
                     if span_text.strip():
                         all_spans.append(span)
-                        full_text_parts.append(span_text)
+                        span_texts.append(span_text)
+                if span_texts:
+                    line_texts.append(" ".join(span_texts))
 
-            full_text = " ".join(full_text_parts).strip()
+            full_text = "\n".join(line_texts).strip()
             if not full_text:
                 continue
 
