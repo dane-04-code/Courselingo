@@ -3,10 +3,9 @@
 Strategy:
   1. Open the original PDF (preserves images, backgrounds, shapes).
   2. Pass 1 — measure: calculate the fitted font size for every block using a
-     scratch page, then normalise sizes within each (page, original_size) group
-     so visually related text stays uniform.
-  3. Pass 2 — render: redact original text and insert translated text at the
-     coordinated sizes.
+     scratch page. Each block is fitted independently.
+  3. Pass 2 — render: redact original text and insert translated text at each
+     block's individually fitted size.
 """
 
 from __future__ import annotations
@@ -179,6 +178,7 @@ def build_translated_pdf(
     # ── Pass 1: measure fitted sizes ─────────────────────────────────
     # A single scratch page is reused for all measurements. insert_textbox()
     # returns a geometric fit result regardless of existing content on the page.
+    # Each block is fitted independently — no cross-block normalisation.
 
     fitted: list[float] = [0.0] * len(blocks)
 
@@ -199,14 +199,6 @@ def build_translated_pdf(
                 unicode_font_path,
             )
 
-    # Normalise: blocks that shared the same original font size on the same
-    # page use the smallest fitted size across their group, keeping related
-    # text (e.g. all body paragraphs) visually uniform.
-    group_min: dict[tuple[int, float], float] = defaultdict(lambda: float("inf"))
-    for i, block in enumerate(blocks):
-        key = (block["page_number"], block["font_size"])
-        group_min[key] = min(group_min[key], fitted[i])
-
     # ── Pass 2: redact + insert on the real document ─────────────────
     with fitz.open(stream=original_pdf_bytes, filetype="pdf") as doc:
         for page_idx in range(len(doc)):
@@ -222,15 +214,14 @@ def build_translated_pdf(
                 page.add_redact_annot(rect, fill=(1, 1, 1))
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
-            # Insert translated text at coordinated sizes
+            # Insert translated text at each block's individually fitted size
             for i, block in page_entries:
                 text = block["text"].strip()
                 if not text:
                     continue
                 rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
                 fontname = _map_font(block["font_name"])
-                fontsize = group_min[(page_idx, block["font_size"])]
-                _insert_text(page, rect, text, fontname, fontsize, unicode_font_path)
+                _insert_text(page, rect, text, fontname, fitted[i], unicode_font_path)
 
         buf = io.BytesIO()
         doc.save(buf)
