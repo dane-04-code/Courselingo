@@ -93,7 +93,7 @@ MIN_FONT_SIZE = 7.0
 # the group minimum fitted size only when the reduction is within this threshold.
 # Larger reductions stay isolated so one badly overflowing block can't pull
 # everything else down with it.
-SYNC_THRESHOLD = 2.0
+SYNC_THRESHOLD = 4.0
 
 
 def _calc_fitted_size(
