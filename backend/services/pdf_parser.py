@@ -1,4 +1,4 @@
-"""PDF parsing service — extracts text lines with position metadata using PyMuPDF."""
+"""PDF parsing service — extracts text blocks with position metadata using PyMuPDF."""
 
 from __future__ import annotations
 
@@ -10,17 +10,17 @@ import fitz  # PyMuPDF
 
 @dataclass
 class TextBlock:
-    """A single text line extracted from a PDF page."""
+    """A single text block extracted from a PDF page."""
 
     page_number: int
     x0: float
     y0: float
     x1: float
     y1: float
-    baseline: float   # actual baseline y (PyMuPDF coords)
     text: str
     font_size: float
     font_name: str
+    baseline_y: float  # exact baseline y from the first span's origin (PyMuPDF coords)
 
 
 def _dominant_font(spans: list[dict[str, Any]]) -> tuple[str, float]:
@@ -35,67 +35,64 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
     """
     Open a PDF from raw bytes and return a list of text-block dicts.
 
-    Extracts at the *line* level so each entry has a single, consistent
-    font size.  This prevents headings and body text that PyMuPDF groups
-    into the same block from being merged into one font size.
+    Each dict mirrors the ``TextBlock`` fields and preserves the exact
+    bounding-box coordinates so the builder can reconstruct the layout.
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     blocks: list[dict[str, Any]] = []
 
     for page_num, page in enumerate(doc):
+        # get_text("dict") gives us blocks → lines → spans with font info
         page_dict = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
 
         for block in page_dict.get("blocks", []):
+            # Skip image blocks (type == 1)
             if block.get("type") != 0:
                 continue
 
+            # Collect all spans to find dominant font
+            all_spans: list[dict[str, Any]] = []
+            full_text_parts: list[str] = []
+
             for line in block.get("lines", []):
-                spans = line.get("spans", [])
-                if not spans:
-                    continue
-
-                # Build line text from spans and collect font info
-                non_empty_spans: list[dict[str, Any]] = []
-                parts: list[str] = []
-                baseline: float | None = None
-
-                for span in spans:
+                for span in line.get("spans", []):
                     span_text = span.get("text", "")
-                    parts.append(span_text)
                     if span_text.strip():
-                        non_empty_spans.append(span)
-                        if baseline is None:
-                            origin = span.get("origin")
-                            if origin:
-                                baseline = origin[1]
+                        all_spans.append(span)
+                        full_text_parts.append(span_text)
 
-                text = "".join(parts).strip()
-                if not text:
-                    continue
+            full_text = " ".join(full_text_parts).strip()
+            if not full_text:
+                continue
 
-                font_name, font_size = _dominant_font(non_empty_spans)
+            font_name, font_size = _dominant_font(all_spans)
 
-                # Use the line's own bbox for precise positioning
-                bbox = line["bbox"]  # (x0, y0, x1, y1)
+            bbox = block["bbox"]  # (x0, y0, x1, y1)
 
-                if baseline is None:
-                    baseline = bbox[1] + font_size * 0.8
+            # Use the first span's origin (exact baseline point) when available.
+            # origin is (x, y) in PyMuPDF top-left coordinates.
+            first_span = all_spans[0] if all_spans else None
+            if first_span and "origin" in first_span:
+                baseline_y = first_span["origin"][1]
+            else:
+                # Fallback: approximate baseline as top-of-box + font_size
+                baseline_y = bbox[1] + font_size
 
-                blocks.append(
-                    asdict(
-                        TextBlock(
-                            page_number=page_num,
-                            x0=bbox[0],
-                            y0=bbox[1],
-                            x1=bbox[2],
-                            y1=bbox[3],
-                            baseline=round(baseline, 2),
-                            text=text,
-                            font_size=round(font_size, 2),
-                            font_name=font_name,
-                        )
+            blocks.append(
+                asdict(
+                    TextBlock(
+                        page_number=page_num,
+                        x0=bbox[0],
+                        y0=bbox[1],
+                        x1=bbox[2],
+                        y1=bbox[3],
+                        text=full_text,
+                        font_size=round(font_size, 2),
+                        font_name=font_name,
+                        baseline_y=round(baseline_y, 2),
                     )
                 )
+            )
 
     doc.close()
     return blocks

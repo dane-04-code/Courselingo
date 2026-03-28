@@ -80,8 +80,28 @@ export default function TranslatorPage() {
   const [stepText, setStepText]       = useState(STEPS[0]);
   const [modalDone, setModalDone]     = useState(false);
 
-  const inputRef        = useRef<HTMLInputElement>(null);
+  const inputRef         = useRef<HTMLInputElement>(null);
+  const langSelectRef    = useRef<HTMLSelectElement>(null);
   const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /* resize select to fit selected option text */
+  useEffect(() => {
+    const select = langSelectRef.current;
+    if (!select) return;
+    const text = select.options[select.selectedIndex]?.text ?? "";
+    const sizer = document.createElement("span");
+    sizer.style.cssText = "visibility:hidden;position:absolute;white-space:nowrap;";
+    const cs = getComputedStyle(select);
+    sizer.style.fontSize   = cs.fontSize;
+    sizer.style.fontFamily = cs.fontFamily;
+    sizer.style.fontWeight = cs.fontWeight;
+    sizer.textContent = text;
+    document.body.appendChild(sizer);
+    const w = sizer.offsetWidth;
+    document.body.removeChild(sizer);
+    // left padding (1rem≈16px) + right padding for chevron (2.6rem≈42px) + 2px border
+    select.style.width = `${w + 16 + 42 + 2}px`;
+  }, [language]);
 
   /* ─── file helpers ──────────────────────────────────────────────────── */
 
@@ -268,6 +288,7 @@ export default function TranslatorPage() {
                 <label htmlFor="lang-select" className="tr-lang-label">Translate to</label>
                 <select
                   id="lang-select"
+                  ref={langSelectRef}
                   className="tr-lang-select"
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
