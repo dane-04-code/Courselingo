@@ -51,18 +51,29 @@ def translate_blocks(
     """
     Translate the ``text`` field of every block dict **in-place** and return
     the list.  Sends all texts to DeepL in a single batch call for speed.
+
+    Blocks whose text contains ``\\n`` (e.g. bullet lists) are split into
+    per-line segments before sending, so DeepL translates each segment
+    independently.  This prevents word-order shifts from moving translated
+    text across line boundaries.  The ``\\n`` positions are then restored
+    exactly in the translated output.
     """
-    # Collect indices and texts that actually need translation
-    to_translate: list[tuple[int, str]] = []
+    # Build a flat batch of segments to translate.
+    # Each entry records (block_idx, line_idx) so we can reassemble afterwards.
+    segments: list[tuple[int, int, str]] = []  # (block_idx, line_idx, text)
+
     for i, block in enumerate(blocks):
         text = block.get("text", "")
-        if text.strip():
-            to_translate.append((i, text))
+        if not text.strip():
+            continue
+        for j, line in enumerate(text.split("\n")):
+            if line.strip():
+                segments.append((i, j, line))
 
-    if not to_translate:
+    if not segments:
         return blocks
 
-    texts = [t for _, t in to_translate]
+    texts = [seg[2] for seg in segments]
 
     try:
         translator = deepl.Translator(api_key)
@@ -72,8 +83,23 @@ def translate_blocks(
         if not isinstance(results, list):
             results = [results]
 
-        for (idx, _), result in zip(to_translate, results):
-            blocks[idx]["text"] = result.text
+        # Map (block_idx, line_idx) → translated text
+        translated: dict[tuple[int, int], str] = {
+            (block_idx, line_idx): result.text
+            for (block_idx, line_idx, _), result in zip(segments, results)
+        }
+
+        # Reassemble block texts, preserving \n positions exactly
+        for i, block in enumerate(blocks):
+            text = block.get("text", "")
+            if not text.strip():
+                continue
+            lines = text.split("\n")
+            block["text"] = "\n".join(
+                translated.get((i, j), line)
+                for j, line in enumerate(lines)
+            )
+
     except deepl.DeepLException as exc:
         raise TranslationError(f"DeepL API error: {exc}") from exc
     except Exception as exc:
