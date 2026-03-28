@@ -49,6 +49,7 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
     for page_num, page in enumerate(doc):
         # get_text("dict") gives us blocks → lines → spans with font info
         page_dict = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+        page_width = page.rect.width
 
         for block in page_dict.get("blocks", []):
             # Skip image blocks (type == 1)
@@ -86,6 +87,10 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
 
             bbox = block["bbox"]  # (x0, y0, x1, y1)
 
+            # Expand x1 by 30% of block width, capped at page width.
+            block_width = bbox[2] - bbox[0]
+            x1_expanded = min(bbox[2] + 0.30 * block_width, page_width)
+
             # Use the first span's origin (exact baseline point) when available.
             # origin is (x, y) in PyMuPDF top-left coordinates.
             first_span = all_spans[0] if all_spans else None
@@ -112,7 +117,7 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
                     blocks.append(asdict(TextBlock(
                         page_number=page_num,
                         x0=bbox[0], y0=sub_y0,
-                        x1=bbox[2], y1=sub_y1,
+                        x1=x1_expanded, y1=sub_y1,
                         text=sub_text,
                         font_size=round(font_size, 2),
                         font_name=font_name,
@@ -125,7 +130,7 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
                             page_number=page_num,
                             x0=bbox[0],
                             y0=bbox[1],
-                            x1=bbox[2],
+                            x1=x1_expanded,
                             y1=bbox[3],
                             text=full_text,
                             font_size=round(font_size, 2),

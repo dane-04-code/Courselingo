@@ -2,11 +2,11 @@
 
 Strategy:
   1. Open the original PDF (preserves images, backgrounds, shapes).
-  2. Pass 1 — measure: calculate the fitted font size per block using a scratch
-     page, then apply threshold normalisation: blocks sharing the same original
-     font size on the same page are synced to the group minimum, but only when
-     the difference is <= SYNC_THRESHOLD pt. Large overflows stay isolated.
-  3. Pass 2 — render: redact original text and insert translated text.
+  2. Pass 1 — measure: calculate the fitted font size per block using expanded
+     boxes (x1 already widened by parser; y1 expanded 40% here). Then apply
+     per-page body-text normalisation: all body-text blocks (font_size <= 14pt)
+     on a page use the minimum fitted size across the group for visual consistency.
+  3. Pass 2 — render: redact the expanded area with white, then insert text.
 """
 
 from __future__ import annotations
@@ -89,11 +89,9 @@ def _find_unicode_font() -> str | None:
 
 MIN_FONT_SIZE = 7.0
 
-# Blocks sharing the same original font size on the same page are synced to
-# the group minimum fitted size only when the reduction is within this threshold.
-# Larger reductions stay isolated so one badly overflowing block can't pull
-# everything else down with it.
-SYNC_THRESHOLD = 4.0
+# Font size at or below which a block is considered body text.
+# Body-text blocks on the same page share a single minimum fitted size.
+BODY_TEXT_MAX_SIZE = 14.0
 
 
 def _calc_fitted_size(
@@ -183,9 +181,9 @@ def build_translated_pdf(
         pages[block["page_number"]].append((i, block))
 
     # ── Pass 1: measure fitted sizes ─────────────────────────────────
-    # A single scratch page is reused for all measurements. insert_textbox()
-    # returns a geometric fit result regardless of existing content on the page.
-    # Each block is fitted independently — no cross-block normalisation.
+    # Boxes are measured with x1 already expanded by the parser (+30% width)
+    # and y1 expanded here by 40% of original height, giving translated text
+    # more room before font-size reduction kicks in.
 
     fitted: list[float] = [0.0] * len(blocks)
 
@@ -196,29 +194,30 @@ def build_translated_pdf(
             if not text:
                 fitted[i] = block["font_size"]
                 continue
+            orig_height = block["y1"] - block["y0"]
             fitted[i] = _calc_fitted_size(
                 scratch_page,
                 text,
                 _map_font(block["font_name"]),
                 block["font_size"],
-                block["x1"] - block["x0"],
-                block["y1"] - block["y0"],
+                block["x1"] - block["x0"],          # x1 already expanded by parser
+                orig_height * 1.40,                  # +40% vertical room
                 unicode_font_path,
             )
 
-    # Threshold normalisation: sync same-size groups per page, but only
-    # when the worst-case reduction is within SYNC_THRESHOLD points.
-    group_min: dict[tuple[int, float], float] = defaultdict(lambda: float("inf"))
+    # Per-page body-text normalisation: find the minimum fitted size across all
+    # body-text blocks (font_size <= BODY_TEXT_MAX_SIZE) on each page and apply
+    # it uniformly so paragraphs look consistent regardless of translation length.
+    page_body_min: dict[int, float] = defaultdict(lambda: float("inf"))
     for i, block in enumerate(blocks):
-        key = (block["page_number"], block["font_size"])
-        group_min[key] = min(group_min[key], fitted[i])
+        if block["font_size"] <= BODY_TEXT_MAX_SIZE and block["text"].strip():
+            page_body_min[block["page_number"]] = min(
+                page_body_min[block["page_number"]], fitted[i]
+            )
 
     for i, block in enumerate(blocks):
-        key = (block["page_number"], block["font_size"])
-        reduction = block["font_size"] - group_min[key]
-        if reduction <= SYNC_THRESHOLD:
-            fitted[i] = group_min[key]
-        # else: large overflow — keep individual fitted size
+        if block["font_size"] <= BODY_TEXT_MAX_SIZE and block["text"].strip():
+            fitted[i] = page_body_min[block["page_number"]]
 
     # ── Pass 2: redact + insert on the real document ─────────────────
     with fitz.open(stream=original_pdf_bytes, filetype="pdf") as doc:
@@ -229,18 +228,23 @@ def build_translated_pdf(
 
             page = doc[page_idx]
 
-            # Redact original text areas (white fill, images untouched)
+            # Redact using the same expanded rect that text will be drawn into.
+            # x1 is already expanded by the parser; y1 is expanded +40% here.
             for _, block in page_entries:
-                rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
+                orig_height = block["y1"] - block["y0"]
+                y1_expanded = block["y1"] + 0.40 * orig_height
+                rect = fitz.Rect(block["x0"], block["y0"], block["x1"], y1_expanded)
                 page.add_redact_annot(rect, fill=(1, 1, 1))
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
-            # Insert translated text at each block's individually fitted size
+            # Insert translated text into the expanded rect at each block's fitted size
             for i, block in page_entries:
                 text = block["text"].strip()
                 if not text:
                     continue
-                rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
+                orig_height = block["y1"] - block["y0"]
+                y1_expanded = block["y1"] + 0.40 * orig_height
+                rect = fitz.Rect(block["x0"], block["y0"], block["x1"], y1_expanded)
                 fontname = _map_font(block["font_name"])
                 _insert_text(page, rect, text, fontname, fitted[i], unicode_font_path)
 
