@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, asdict
 from typing import Any
 
 import fitz  # PyMuPDF
+
+# Matches lines that start a new bullet/numbered list item.
+# Used to distinguish semantic line breaks from word-wrap breaks.
+_LIST_ITEM_RE = re.compile(r"^[\s]*([•◦▪▸►→–\-\*]|\d+[.):])\s")
 
 
 @dataclass
@@ -53,7 +58,10 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
             # Collect all spans to find dominant font
             all_spans: list[dict[str, Any]] = []
 
-            line_texts: list[str] = []
+            # Collect lines as (text, is_new_list_item) pairs.
+            # Word-wrap continuations join with a space; new list items
+            # get a \n so DeepL and insert_textbox preserve item boundaries.
+            line_parts: list[tuple[str, bool]] = []
             for line in block.get("lines", []):
                 span_texts: list[str] = []
                 for span in line.get("spans", []):
@@ -62,9 +70,15 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
                         all_spans.append(span)
                         span_texts.append(span_text)
                 if span_texts:
-                    line_texts.append(" ".join(span_texts))
+                    line_text = " ".join(span_texts)
+                    line_parts.append((line_text, bool(_LIST_ITEM_RE.match(line_text))))
 
-            full_text = "\n".join(line_texts).strip()
+            if not line_parts:
+                continue
+            parts = [line_parts[0][0]]
+            for line_text, is_new_item in line_parts[1:]:
+                parts.append(("\n" if is_new_item else " ") + line_text)
+            full_text = "".join(parts).strip()
             if not full_text:
                 continue
 
