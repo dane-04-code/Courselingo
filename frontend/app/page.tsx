@@ -40,6 +40,7 @@ const STEPS = [
 /* ─── component ────────────────────────────────────────────────── */
 export default function Home() {
   const [navOpen, setNavOpen] = useState(false);
+  const [bannerVisible, setBannerVisible] = useState(true);
   const [file, setFile] = useState<File | null>(null);
   const [language, setLanguage] = useState(LANGUAGES[0].code);
   const [status, setStatus] = useState<Status>("idle");
@@ -190,7 +191,23 @@ export default function Home() {
   return (
     <>
       {/* ──────────── NAV ──────────────────────────────────────── */}
-      <nav>
+      {/* ──────────── PROMO BANNER ──────────────────────────────── */}
+      {bannerVisible && (
+        <div className="promo-banner" role="banner">
+          <div className="promo-banner-text">
+            <span>🎉 New here? Create a free account and get <strong>3 free credits</strong> — no credit card needed.</span>
+            <a href="/signup" className="promo-banner-cta">Get started free →</a>
+          </div>
+          <button
+            className="promo-banner-close"
+            onClick={() => setBannerVisible(false)}
+            aria-label="Dismiss"
+            type="button"
+          >×</button>
+        </div>
+      )}
+
+      <nav style={{ top: bannerVisible ? "44px" : "0" }}>
         <a href="#" className="logo">
           Course<span className="logo-dot">Lingo</span>
         </a>
@@ -213,7 +230,7 @@ export default function Home() {
       </nav>
 
       {/* Mobile nav overlay */}
-      <div className={`nav-mobile-overlay${navOpen ? " open" : ""}`} onClick={() => setNavOpen(false)}>
+      <div className={`nav-mobile-overlay${navOpen ? " open" : ""}`} style={{ top: bannerVisible ? "109px" : "65px" }} onClick={() => setNavOpen(false)}>
         <a href="#how">How it works</a>
         <a href="#pricing">Pricing</a>
         <a href="#faq">FAQ</a>

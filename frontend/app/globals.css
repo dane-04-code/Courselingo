@@ -29,6 +29,62 @@ body {
   overflow-x: hidden;
 }
 
+/* ─── PROMO BANNER ─── */
+.promo-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 102;
+  background: var(--ink);
+  color: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.6rem 3rem 0.6rem 1rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.promo-banner-text { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+
+.promo-banner strong { color: var(--terracotta-light); font-weight: 600; }
+
+.promo-banner-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--terracotta);
+  color: white;
+  padding: 0.28rem 0.85rem;
+  border-radius: 100px;
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background 0.18s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.promo-banner-cta:hover { background: #b05a42; }
+
+.promo-banner-close {
+  position: absolute;
+  right: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: rgba(250,247,242,0.5);
+  font-size: 1.1rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.25rem;
+  transition: color 0.15s;
+}
+
+.promo-banner-close:hover { color: var(--cream); }
+
 /* ─── NAV ─── */
 nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
