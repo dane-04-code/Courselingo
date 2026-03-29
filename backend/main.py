@@ -144,29 +144,16 @@ async def estimate_characters(file: UploadFile = File(...)):
     name = (file.filename or "").lower()
 
     if name.endswith(".pdf"):
-        import fitz
         try:
-            doc = fitz.open(stream=content, filetype="pdf")
-            total_chars = sum(
-                len(b[4])
-                for page in doc
-                for b in page.get_text("blocks")
-                if b[6] == 0  # 0 = text block, 1 = image block
-            )
-            doc.close()
+            blocks = extract_text_blocks(content)
+            total_chars = sum(len(b["text"]) for b in blocks)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Failed to read PDF: {exc}")
 
     elif name.endswith(".docx"):
-        from docx import Document
-        import io
         try:
-            doc = Document(io.BytesIO(content))
-            total_chars = sum(len(p.text) for p in doc.paragraphs)
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        total_chars += len(cell.text)
+            segs = extract_text_segments(content)
+            total_chars = sum(len(s["text"]) for s in segs)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Failed to read DOCX: {exc}")
 
