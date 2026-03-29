@@ -39,6 +39,7 @@ const STEPS = [
 
 /* ─── component ────────────────────────────────────────────────── */
 export default function Home() {
+  const [navOpen, setNavOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [language, setLanguage] = useState(LANGUAGES[0].code);
   const [status, setStatus] = useState<Status>("idle");
@@ -200,7 +201,25 @@ export default function Home() {
           <li><a href="/blog">Blog</a></li>
           <li><a href="/login" className="nav-cta">Sign in →</a></li>
         </ul>
+        <button
+          className={`nav-hamburger${navOpen ? " open" : ""}`}
+          aria-label={navOpen ? "Close menu" : "Open menu"}
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen((v) => !v)}
+          type="button"
+        >
+          <span /><span /><span />
+        </button>
       </nav>
+
+      {/* Mobile nav overlay */}
+      <div className={`nav-mobile-overlay${navOpen ? " open" : ""}`} onClick={() => setNavOpen(false)}>
+        <a href="#how">How it works</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="/blog">Blog</a>
+        <a href="/login">Sign in →</a>
+      </div>
 
       {/* ──────────── HERO ─────────────────────────────────────── */}
       <section style={{ background: "var(--cream)" }}>
@@ -227,6 +246,30 @@ export default function Home() {
                 Translate your PDF ↗
               </a>
               <div className="hero-note">⚡ Results in under 60 seconds</div>
+            </div>
+
+            {/* Language ticker */}
+            <div className="lang-ticker">
+              <span className="lang-ticker-label">19 languages →</span>
+              <div className="lang-ticker-track">
+                <div className="lang-ticker-inner">
+                  {[
+                    ["🇫🇷","French"],["🇪🇸","Spanish"],["🇩🇪","German"],["🇮🇹","Italian"],
+                    ["🇵🇹","Portuguese"],["🇳🇱","Dutch"],["🇵🇱","Polish"],["🇯🇵","Japanese"],
+                    ["🇨🇳","Chinese"],["🇰🇷","Korean"],["🇷🇺","Russian"],["🇸🇪","Swedish"],
+                    ["🇩🇰","Danish"],["🇫🇮","Finnish"],["🇨🇿","Czech"],["🇭🇺","Hungarian"],
+                    ["🇷🇴","Romanian"],["🇧🇬","Bulgarian"],["🇹🇷","Turkish"],
+                    /* duplicate for seamless loop */
+                    ["🇫🇷","French"],["🇪🇸","Spanish"],["🇩🇪","German"],["🇮🇹","Italian"],
+                    ["🇵🇹","Portuguese"],["🇳🇱","Dutch"],["🇵🇱","Polish"],["🇯🇵","Japanese"],
+                    ["🇨🇳","Chinese"],["🇰🇷","Korean"],["🇷🇺","Russian"],["🇸🇪","Swedish"],
+                    ["🇩🇰","Danish"],["🇫🇮","Finnish"],["🇨🇿","Czech"],["🇭🇺","Hungarian"],
+                    ["🇷🇴","Romanian"],["🇧🇬","Bulgarian"],["🇹🇷","Turkish"],
+                  ].map(([flag, name], i) => (
+                    <span key={i} className="lang-pill">{flag} {name}</span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -319,6 +362,141 @@ export default function Home() {
               <p>{s.desc}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ──────────── BEFORE / AFTER EXAMPLE ──────────────────── */}
+      <section className="section example-section" id="example">
+        <div className="section-label">✦ See it in action</div>
+        <h2>
+          Same layout.
+          <br />
+          New language.
+        </h2>
+        <p className="section-sub">
+          Every heading, paragraph, and bullet point translated precisely — your branding stays completely intact.
+        </p>
+
+        <div className="example-comparison">
+          {/* Original */}
+          <div className="example-doc">
+            <div className="example-doc-label">Original · English</div>
+            <div className="example-page">
+              <div className="ex-page-header">
+                <div className="ex-logo-mark" />
+                <div className="ex-header-lines">
+                  <div className="ex-line ex-line--title" style={{ width: "72%" }} />
+                  <div className="ex-line ex-line--sub" style={{ width: "45%" }} />
+                </div>
+              </div>
+              <div className="ex-section-title">Module 1: Getting Started</div>
+              <div className="ex-body-block">
+                <div className="ex-line" style={{ width: "100%" }} />
+                <div className="ex-line" style={{ width: "94%" }} />
+                <div className="ex-line" style={{ width: "88%" }} />
+                <div className="ex-line" style={{ width: "65%" }} />
+              </div>
+              <div className="ex-bullets">
+                <div className="ex-bullet"><span className="ex-bullet-dot" />
+                  <div className="ex-line" style={{ width: "82%" }} /></div>
+                <div className="ex-bullet"><span className="ex-bullet-dot" />
+                  <div className="ex-line" style={{ width: "74%" }} /></div>
+                <div className="ex-bullet"><span className="ex-bullet-dot" />
+                  <div className="ex-line" style={{ width: "88%" }} /></div>
+              </div>
+              <div className="ex-callout">
+                <div className="ex-line ex-line--accent" style={{ width: "100%" }} />
+                <div className="ex-line ex-line--accent" style={{ width: "78%" }} />
+              </div>
+              <div className="ex-section-title" style={{ marginTop: "1.25rem" }}>What you will need</div>
+              <div className="ex-body-block">
+                <div className="ex-line" style={{ width: "100%" }} />
+                <div className="ex-line" style={{ width: "91%" }} />
+                <div className="ex-line" style={{ width: "55%" }} />
+              </div>
+            </div>
+            <div className="example-real-text">
+              <div className="ert-block">
+                <span className="ert-label">Heading</span>
+                <span className="ert-en">Module 1: Getting Started</span>
+              </div>
+              <div className="ert-block">
+                <span className="ert-label">Body</span>
+                <span className="ert-en">Welcome to your knitting masterclass. In this module you will learn the foundational stitches every beginner needs.</span>
+              </div>
+              <div className="ert-block">
+                <span className="ert-label">Bullet</span>
+                <span className="ert-en">Cast-on technique for beginners</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Arrow */}
+          <div className="example-arrow">
+            <div className="example-arrow-inner">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <path d="M6 16h20M19 9l7 7-7 7" stroke="var(--terracotta)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span>French</span>
+            </div>
+          </div>
+
+          {/* Translated */}
+          <div className="example-doc example-doc--translated">
+            <div className="example-doc-label example-doc-label--translated">Translated · Français</div>
+            <div className="example-page example-page--translated">
+              <div className="ex-page-header">
+                <div className="ex-logo-mark" />
+                <div className="ex-header-lines">
+                  <div className="ex-line ex-line--title" style={{ width: "72%" }} />
+                  <div className="ex-line ex-line--sub" style={{ width: "45%" }} />
+                </div>
+              </div>
+              <div className="ex-section-title ex-section-title--fr">Module 1 : Premiers pas</div>
+              <div className="ex-body-block">
+                <div className="ex-line ex-line--tr" style={{ width: "100%" }} />
+                <div className="ex-line ex-line--tr" style={{ width: "94%" }} />
+                <div className="ex-line ex-line--tr" style={{ width: "88%" }} />
+                <div className="ex-line ex-line--tr" style={{ width: "65%" }} />
+              </div>
+              <div className="ex-bullets">
+                <div className="ex-bullet"><span className="ex-bullet-dot ex-bullet-dot--tr" />
+                  <div className="ex-line ex-line--tr" style={{ width: "82%" }} /></div>
+                <div className="ex-bullet"><span className="ex-bullet-dot ex-bullet-dot--tr" />
+                  <div className="ex-line ex-line--tr" style={{ width: "74%" }} /></div>
+                <div className="ex-bullet"><span className="ex-bullet-dot ex-bullet-dot--tr" />
+                  <div className="ex-line ex-line--tr" style={{ width: "88%" }} /></div>
+              </div>
+              <div className="ex-callout ex-callout--tr">
+                <div className="ex-line ex-line--accent-tr" style={{ width: "100%" }} />
+                <div className="ex-line ex-line--accent-tr" style={{ width: "78%" }} />
+              </div>
+              <div className="ex-section-title ex-section-title--fr" style={{ marginTop: "1.25rem" }}>Ce dont vous aurez besoin</div>
+              <div className="ex-body-block">
+                <div className="ex-line ex-line--tr" style={{ width: "100%" }} />
+                <div className="ex-line ex-line--tr" style={{ width: "91%" }} />
+                <div className="ex-line ex-line--tr" style={{ width: "55%" }} />
+              </div>
+            </div>
+            <div className="example-real-text">
+              <div className="ert-block">
+                <span className="ert-label ert-label--tr">Heading</span>
+                <span className="ert-fr">Module 1 : Premiers pas</span>
+              </div>
+              <div className="ert-block">
+                <span className="ert-label ert-label--tr">Body</span>
+                <span className="ert-fr">Bienvenue dans votre cours de tricot. Dans ce module, vous apprendrez les points fondamentaux dont tout débutant a besoin.</span>
+              </div>
+              <div className="ert-block">
+                <span className="ert-label ert-label--tr">Bullet</span>
+                <span className="ert-fr">Technique de montage pour débutants</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="example-note">
+          Layout, fonts, and spacing are pixel-perfect — only the words change.
         </div>
       </section>
 
@@ -420,16 +598,16 @@ export default function Home() {
           No subscriptions. No monthly fees. Pay per document, or save with a pack.
         </p>
         <div className="pricing-grid">
-          {/* Single Doc */}
+          {/* Starter */}
           <div className="price-card">
-            <div className="price-name">Single Doc</div>
+            <div className="price-name">Starter</div>
             <div className="price-amount">$9</div>
-            <div className="price-desc">per document</div>
+            <div className="price-desc">3 credits · one-time</div>
             <ul className="price-features">
-              <li>1 PDF or DOCX translated</li>
-              <li>Up to 20 MB file size</li>
-              <li>30+ languages</li>
-              <li>Layout preserved</li>
+              <li>3 credits included</li>
+              <li>1 credit = 1 short document</li>
+              <li>19 languages</li>
+              <li>Layout & fonts preserved</li>
               <li>Download instantly</li>
             </ul>
             <button className="btn-outline">Get started</button>
@@ -439,31 +617,34 @@ export default function Home() {
             <div className="price-tag">Most popular</div>
             <div className="price-name">Course Pack</div>
             <div className="price-amount">$49</div>
-            <div className="price-desc">up to 10 documents</div>
+            <div className="price-desc">15 credits · one-time</div>
             <ul className="price-features">
-              <li>10 files translated</li>
-              <li>Unlimited file size</li>
-              <li>30+ languages</li>
-              <li>Layout preserved</li>
-              <li>Priority processing</li>
+              <li>15 credits included</li>
+              <li>Best for multi-language launches</li>
+              <li>19 languages</li>
+              <li>Layout & fonts preserved</li>
+              <li>Credits never expire</li>
             </ul>
             <button className="btn-primary-sm">Get the pack</button>
           </div>
-          {/* Full Bundle */}
+          {/* Pro Pack */}
           <div className="price-card">
-            <div className="price-name">Full Bundle</div>
+            <div className="price-name">Pro Pack</div>
             <div className="price-amount">$99</div>
-            <div className="price-desc">one-time payment</div>
+            <div className="price-desc">40 credits · one-time</div>
             <ul className="price-features">
-              <li>Unlimited documents</li>
-              <li>Unlimited file size</li>
-              <li>30+ languages</li>
-              <li>Layout preserved</li>
-              <li>Lifetime access</li>
+              <li>40 credits included</li>
+              <li>Best value per credit</li>
+              <li>19 languages</li>
+              <li>Layout & fonts preserved</li>
+              <li>Credits never expire</li>
             </ul>
-            <button className="btn-outline">Get lifetime access</button>
+            <button className="btn-outline">Get the pro pack</button>
           </div>
         </div>
+        <p style={{ textAlign: "center", fontSize: "0.82rem", color: "var(--ink-light)", marginTop: "1.5rem" }}>
+          Credit cost scales with document size — short docs (≤20k chars) cost 1 credit · large docs (120k+) cost 6 credits.
+        </p>
       </section>
 
       {/* ──────────── TESTIMONIALS ─────────────────────────────── */}

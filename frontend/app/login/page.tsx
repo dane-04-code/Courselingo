@@ -96,10 +96,36 @@ export default function LoginPage() {
 
   return (
     <div className="auth-page">
+
+      {/* Brand panel */}
+      <div className="auth-brand">
+        <a href="/" className="auth-brand-logo">Course<span>Lingo</span></a>
+        <div className="auth-brand-body">
+          <div className="auth-brand-tagline">Translate your course.<br />Keep your brand.</div>
+          <p className="auth-brand-sub">Upload a PDF or DOCX. Get back a pixel-perfect translation in seconds — same fonts, same layout, new language.</p>
+          <div className="auth-brand-doc">
+            <span className="auth-brand-doc-icon">📄</span>
+            <div className="auth-brand-doc-lines">
+              <div className="auth-brand-doc-line" style={{ width: "90%" }} />
+              <div className="auth-brand-doc-line" style={{ width: "70%" }} />
+              <div className="auth-brand-doc-line" style={{ width: "80%" }} />
+            </div>
+            <span style={{ fontSize: "1.1rem" }}>→</span>
+            <span className="auth-brand-doc-icon">🇫🇷</span>
+          </div>
+        </div>
+        <div className="auth-brand-testi">
+          <div className="auth-brand-testi-text">&ldquo;I translated my entire knitting workbook into French in under 5 minutes. It looked exactly like the original.&rdquo;</div>
+          <div className="auth-brand-testi-author">Sarah B. · Knitting course creator</div>
+        </div>
+      </div>
+
+      {/* Form panel */}
+      <div className="auth-form-panel">
       <div className="auth-card">
 
-        {/* Logo */}
-        <a href="/" className="auth-logo">
+        {/* Logo (hidden on desktop since brand panel has it) */}
+        <a href="/" className="auth-logo" style={{ display: "none" }} aria-hidden="true">
           Course<span style={{ color: "var(--terracotta)" }}>Lingo</span>
         </a>
 
@@ -207,6 +233,7 @@ export default function LoginPage() {
           <a href="/signup" className="auth-footer-link">Sign up</a>
         </p>
 
+      </div>
       </div>
     </div>
   );

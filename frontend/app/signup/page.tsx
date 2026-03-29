@@ -147,10 +147,35 @@ export default function SignupPage() {
 
   return (
     <div className="auth-page">
+
+      {/* Brand panel */}
+      <div className="auth-brand">
+        <a href="/" className="auth-brand-logo">Course<span>Lingo</span></a>
+        <div className="auth-brand-body">
+          <div className="auth-brand-tagline">Your course,<br />in every language.</div>
+          <p className="auth-brand-sub">Start with 3 free credits. Translate your first document in under 60 seconds — layout and fonts intact.</p>
+          <div className="auth-brand-doc">
+            <span className="auth-brand-doc-icon">📄</span>
+            <div className="auth-brand-doc-lines">
+              <div className="auth-brand-doc-line" style={{ width: "90%" }} />
+              <div className="auth-brand-doc-line" style={{ width: "70%" }} />
+              <div className="auth-brand-doc-line" style={{ width: "80%" }} />
+            </div>
+            <span style={{ fontSize: "1.1rem" }}>→</span>
+            <span className="auth-brand-doc-icon">🇪🇸</span>
+          </div>
+        </div>
+        <div className="auth-brand-testi">
+          <div className="auth-brand-testi-text">&ldquo;I&apos;ve been putting off translating my course for two years. This took me 3 minutes.&rdquo;</div>
+          <div className="auth-brand-testi-author">Margot R. · Yoga teacher & course creator</div>
+        </div>
+      </div>
+
+      {/* Form panel */}
+      <div className="auth-form-panel">
       <div className="auth-card">
 
-        {/* Logo */}
-        <a href="/" className="auth-logo">
+        <a href="/" className="auth-logo" style={{ display: "none" }} aria-hidden="true">
           Course<span style={{ color: "var(--terracotta)" }}>Lingo</span>
         </a>
 
@@ -301,6 +326,7 @@ export default function SignupPage() {
           </>
         )}
 
+      </div>
       </div>
     </div>
   );
