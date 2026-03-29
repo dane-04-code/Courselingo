@@ -40,6 +40,16 @@ const STEPS = [
   "Finalising your document…",
 ];
 
+interface HistoryItem {
+  id: string;
+  filename: string;
+  target_lang: string;
+  credits_deducted: number;
+  created_at: string;
+}
+
+const LANG_MAP = Object.fromEntries(LANGUAGES.map((l) => [l.code, l]));
+
 /* ─── helpers ───────────────────────────────────────────────────────────── */
 
 function formatBytes(bytes: number): string {
@@ -80,6 +90,11 @@ export default function TranslatorPage() {
   const [stepText, setStepText]       = useState(STEPS[0]);
   const [modalDone, setModalDone]     = useState(false);
 
+  /* split-layout state */
+  const [history, setHistory]                   = useState<HistoryItem[]>([]);
+  const [credits, setCredits]                   = useState<number | null>(null);
+  const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
+
   const inputRef         = useRef<HTMLInputElement>(null);
   const langSelectRef    = useRef<HTMLSelectElement>(null);
   const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -102,6 +117,52 @@ export default function TranslatorPage() {
     // left padding (1rem≈16px) + right padding for chevron (2.6rem≈42px) + 2px border
     select.style.width = `${w + 16 + 42 + 2}px`;
   }, [language]);
+
+  /* ─── credits + history ─────────────────────────────────────────────── */
+
+  const fetchCreditsAndHistory = useCallback(async () => {
+    const { data: { user: u } } = await supabase.auth.getUser();
+    if (!u) return;
+
+    const [creditsRes, historyRes] = await Promise.all([
+      supabase
+        .from("user_credits")
+        .select("credits_remaining")
+        .eq("user_id", u.id)
+        .single(),
+      supabase
+        .from("translation_history")
+        .select("id, filename, target_lang, credits_deducted, created_at")
+        .eq("user_id", u.id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ]);
+
+    if (creditsRes.data) setCredits(creditsRes.data.credits_remaining);
+    if (historyRes.data) setHistory(historyRes.data);
+  }, [supabase]);
+
+  // Fetch credits + history on mount
+  useEffect(() => {
+    fetchCreditsAndHistory();
+  }, [fetchCreditsAndHistory]);
+
+  // Estimate credit cost whenever a new file is selected
+  useEffect(() => {
+    if (!file) { setEstimatedCredits(null); return; }
+    const controller = new AbortController();
+    const form = new FormData();
+    form.append("file", file);
+    fetch(`${API_URL}/estimate`, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((d) => setEstimatedCredits(d.credits_required ?? null))
+      .catch(() => {}); // best-effort — don't block the UI
+    return () => controller.abort();
+  }, [file]);
 
   /* ─── file helpers ──────────────────────────────────────────────────── */
 
@@ -161,6 +222,11 @@ export default function TranslatorPage() {
     if (progressInterval.current) clearInterval(progressInterval.current);
   }, []);
 
+  const handleTranslateAgain = useCallback((langCode: string) => {
+    setLanguage(langCode);
+    reset();
+  }, [reset]);
+
   /* ─── fake progress for modal ───────────────────────────────────────── */
 
   const startFakeProgress = useCallback(() => {
@@ -211,6 +277,7 @@ export default function TranslatorPage() {
 
       setStatus("done");
       setTimeout(() => setModalDone(true), 600);
+      fetchCreditsAndHistory();
     } catch (err: unknown) {
       if (progressInterval.current) clearInterval(progressInterval.current);
       setShowModal(false);
@@ -232,27 +299,24 @@ export default function TranslatorPage() {
       }
       setStatus("error");
     }
-  }, [file, language, startFakeProgress]);
+  }, [file, language, startFakeProgress, fetchCreditsAndHistory]);
 
-  /* ─── derived ───────────────────────────────────────────────────────── */
+  /* ─── derived ─────────────────────────────────────────────────────────── */
+  const selectedLang  = LANGUAGES.find((l) => l.code === language);
+  const isUploading   = status === "uploading";
+  const isDone        = status === "done" && !!downloadUrl;
 
-  const selectedLang = LANGUAGES.find((l) => l.code === language);
-  const isUploading  = status === "uploading";
-  const isDone       = status === "done" && !!downloadUrl;
-
-  /* ─── render ────────────────────────────────────────────────────────── */
-
+  /* ─── render ───────────────────────────────────────────────────────────── */
   return (
     <div className="translator-layout">
 
-      {/* ── HEADER ───────────────────────────────────────────────────── */}
+      {/* ── HEADER ─────────────────────────────────────────────────────── */}
       <header className="translator-header">
         <a href="/" className="logo">
           Course<span className="logo-dot">Lingo</span>
         </a>
-
         <div className="translator-header-right">
-          <div className="user-avatar" aria-label="User avatar" title={user?.email ?? ""}>
+          <div className="user-avatar" title={user?.email ?? ""}>
             <span>{user?.email?.slice(0, 2).toUpperCase() ?? "?"}</span>
           </div>
           <button
@@ -266,218 +330,243 @@ export default function TranslatorPage() {
         </div>
       </header>
 
-      {/* ── MAIN ─────────────────────────────────────────────────────── */}
+      {/* ── SPLIT MAIN ─────────────────────────────────────────────────── */}
       <main className="translator-main">
-        <div className="translator-content">
 
-          {/* ── Page heading ─────────────────────────────────────────── */}
-          <div className="translator-heading-group">
-            <div className="translator-section-label">✦ Document translator</div>
-            <h1 className="translator-title">
-              Translate your course material
-            </h1>
-            <p className="translator-subtitle">
-              Upload a PDF or DOCX file and choose your target language.
-            </p>
+        {/* LEFT PANEL */}
+        <div className="tr-left">
+
+          {/* Credit balance */}
+          <div className="tr-credit-card">
+            <div className="tr-credit-left">
+              <div className="tr-credit-label">Credits remaining</div>
+              <div className="tr-credit-amount">
+                {credits === null ? "—" : credits}
+              </div>
+            </div>
+            <a href="/#pricing" className="tr-credit-buy">Buy more →</a>
           </div>
 
-          {/* ── Idle: language select + upload ───────────────────────── */}
-          {!isUploading && !isDone && (
-            <>
-              <div className="tr-lang-row">
-                <label htmlFor="lang-select" className="tr-lang-label">Translate to</label>
-                <select
-                  id="lang-select"
-                  ref={langSelectRef}
-                  className="tr-lang-select"
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                >
-                  {LANGUAGES.map((l) => (
-                    <option key={l.code} value={l.code}>{l.name}</option>
-                  ))}
-                </select>
-              </div>
+          {/* Heading */}
+          <div className="tr-left-heading">
+            <div className="tr-left-eyebrow">✦ New translation</div>
+            <div className="tr-left-title">Translate your document</div>
+          </div>
 
-              <div
-                className={`tr-upload-box${dragging ? " dragging" : ""}${file ? " has-file" : ""}`}
-                onClick={() => inputRef.current?.click()}
-                onDrop={onDrop}
-                onDragOver={onDragOver}
-                onDragLeave={onDragLeave}
-                role="button"
-                tabIndex={0}
-                aria-label="File upload area"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    inputRef.current?.click();
-                  }
-                }}
-              >
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={onInputChange}
-                  style={{ display: "none" }}
-                />
-                {file ? (
-                  <>
-                    <div className="tr-file-icon" aria-hidden="true">
-                      <svg width="44" height="52" viewBox="0 0 30 36" fill="none">
-                        <path d="M3 0C1.34 0 0 1.34 0 3V33C0 34.66 1.34 36 3 36H27C28.66 36 30 34.66 30 33V9L21 0H3Z" fill="#E5DDD5"/>
-                        <path d="M21 0L30 9H21V0Z" fill="#C9BEB4"/>
-                        <rect x="6" y="15" width="18" height="2" rx="1" fill="#A89E97"/>
-                        <rect x="6" y="20" width="13" height="2" rx="1" fill="#A89E97"/>
-                        <rect x="6" y="25" width="15" height="2" rx="1" fill="#A89E97"/>
-                      </svg>
-                    </div>
-                    <div className="tr-file-name">{file.name}</div>
-                  </>
-                ) : (
-                  <>
-                    <div className="tr-upload-icon-wrap" aria-hidden="true">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                        <path d="M12 4L12 16M12 4L8 8M12 4L16 8" stroke="var(--ink-light)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M4 18H20" stroke="var(--ink-light)" strokeWidth="1.5" strokeLinecap="round"/>
-                      </svg>
-                    </div>
-                    <p className="tr-upload-hint">Drop file here or <span>browse</span></p>
-                    <p className="tr-upload-sub">PDF or DOCX · up to 20 MB</p>
-                  </>
+          {/* Language selector */}
+          <div className="tr-lang-row" style={{ margin: 0 }}>
+            <label htmlFor="lang-select" className="tr-lang-label">Translate to</label>
+            <select
+              id="lang-select"
+              ref={langSelectRef}
+              className="tr-lang-select"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              disabled={isUploading}
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>{l.flag} {l.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Upload box */}
+          <div
+            className={`tr-upload-box${dragging ? " dragging" : ""}${file ? " has-file" : ""}`}
+            onClick={() => !isUploading && inputRef.current?.click()}
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            role="button"
+            tabIndex={0}
+            aria-label="File upload area"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                inputRef.current?.click();
+              }
+            }}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              onChange={onInputChange}
+              style={{ display: "none" }}
+            />
+            {file ? (
+              <>
+                <div className="tr-file-icon" aria-hidden="true">
+                  <svg width="44" height="52" viewBox="0 0 30 36" fill="none">
+                    <path d="M3 0C1.34 0 0 1.34 0 3V33C0 34.66 1.34 36 3 36H27C28.66 36 30 34.66 30 33V9L21 0H3Z" fill="#E5DDD5"/>
+                    <path d="M21 0L30 9H21V0Z" fill="#C9BEB4"/>
+                    <rect x="6" y="15" width="18" height="2" rx="1" fill="#A89E97"/>
+                    <rect x="6" y="20" width="13" height="2" rx="1" fill="#A89E97"/>
+                    <rect x="6" y="25" width="15" height="2" rx="1" fill="#A89E97"/>
+                  </svg>
+                </div>
+                <div className="tr-file-name">{file.name}</div>
+              </>
+            ) : (
+              <>
+                <div className="tr-upload-icon-wrap" aria-hidden="true">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 4L12 16M12 4L8 8M12 4L16 8" stroke="var(--ink-light)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M4 18H20" stroke="var(--ink-light)" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <p className="tr-upload-hint">Drop file here or <span>browse</span></p>
+                <p className="tr-upload-sub">PDF or DOCX · up to 20 MB</p>
+              </>
+            )}
+          </div>
+
+          {/* Credit cost estimate */}
+          <div className="tr-estimate-row">
+            <span>Credit cost</span>
+            <span className="tr-estimate-cost">
+              {file
+                ? estimatedCredits === null
+                  ? "Estimating…"
+                  : `${estimatedCredits} credit${estimatedCredits !== 1 ? "s" : ""}`
+                : "—"}
+            </span>
+          </div>
+
+          {/* Error */}
+          {errorMsg && (
+            <div className="error-msg" role="alert">⚠️ {errorMsg}</div>
+          )}
+
+          {/* Action buttons */}
+          {isDone && downloadUrl ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              <a href={downloadUrl} download={downloadName} className="tr-download-btn">
+                ↓ Download translated file
+              </a>
+              <button onClick={reset} className="tr-reset-btn" type="button">
+                Translate another file
+              </button>
+            </div>
+          ) : (
+            <button
+              className="tr-translate-btn"
+              onClick={handleTranslate}
+              disabled={!file || isUploading}
+              type="button"
+            >
+              {isUploading
+                ? "Translating…"
+                : selectedLang
+                  ? `Translate to ${selectedLang.name} →`
+                  : "Translate now →"}
+            </button>
+          )}
+
+        </div>
+
+        {/* RIGHT PANEL */}
+        <div className="tr-right">
+
+          {isUploading ? (
+            /* Progress view during translation */
+            <>
+              <div className="tr-history-header">
+                <span className="tr-history-title">Translating…</span>
+              </div>
+              <div className="tr-progress-panel">
+                <div className="tr-progress-title">{stepText}</div>
+                <div className="tr-progress-bar-wrap">
+                  <div className="tr-progress-bar-fill" style={{ width: `${progress}%` }} />
+                </div>
+                <div className="tr-steps-list" style={{ width: "100%", maxWidth: 320 }}>
+                  {STEPS.map((step, i) => {
+                    const currentStep = Math.min(Math.floor(progress / 20), STEPS.length - 1);
+                    const done   = i < currentStep;
+                    const active = i === currentStep;
+                    return (
+                      <div key={i} className={`tr-step-item${done ? " done" : active ? " active" : " pending"}`}>
+                        <span className="tr-step-bullet" aria-hidden="true">
+                          {done ? "✓" : active ? "✦" : "·"}
+                        </span>
+                        <span className="tr-step-label">{step}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            /* History view */
+            <>
+              <div className="tr-history-header">
+                <span className="tr-history-title">Translation history</span>
+                {history.length > 0 && (
+                  <span className="tr-history-count">{history.length} document{history.length !== 1 ? "s" : ""}</span>
                 )}
               </div>
 
-              {errorMsg && (
-                <div className="error-msg" role="alert">⚠️ {errorMsg}</div>
-              )}
-
-              <button
-                className="btn-translate translator-btn-translate"
-                onClick={handleTranslate}
-                disabled={!file}
-                type="button"
-              >
-                {selectedLang ? `Translate to ${selectedLang.name} →` : "Translate now →"}
-              </button>
-            </>
-          )}
-
-          {/* ── Translating / done: two-box view ─────────────────────── */}
-          {(isUploading || isDone) && (
-            <>
-              <div className="tr-translation-view">
-
-                {/* Left card — original */}
-                <div className="tr-doc-card">
-                  <div className="tr-doc-card-label">Original</div>
-                  <div className="tr-doc-card-icon">
-                    <svg width="52" height="62" viewBox="0 0 30 36" fill="none">
-                      <path d="M3 0C1.34 0 0 1.34 0 3V33C0 34.66 1.34 36 3 36H27C28.66 36 30 34.66 30 33V9L21 0H3Z" fill="#E5DDD5"/>
-                      <path d="M21 0L30 9H21V0Z" fill="#C9BEB4"/>
-                      <rect x="6" y="15" width="18" height="2" rx="1" fill="#A89E97"/>
-                      <rect x="6" y="20" width="13" height="2" rx="1" fill="#A89E97"/>
-                      <rect x="6" y="25" width="15" height="2" rx="1" fill="#A89E97"/>
-                    </svg>
-                  </div>
-                  <div className="tr-doc-card-name">{file?.name}</div>
+              {history.length === 0 ? (
+                <div className="tr-history-empty">
+                  <div className="tr-history-empty-icon">📂</div>
+                  <p className="tr-history-empty-text">
+                    No translations yet — drop your first file to get started.
+                  </p>
                 </div>
-
-                {/* Connector arrow */}
-                <div className="tr-connector" aria-hidden="true">
-                  <div className={`tr-connector-track${isUploading ? " active" : ""}`}>
-                    <div className="tr-connector-dot" />
-                    <div className="tr-connector-dot" />
-                    <div className="tr-connector-dot" />
-                  </div>
-                  <svg className="tr-connector-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-
-                {/* Right card — output */}
-                <div className={`tr-doc-card tr-doc-card-output${isDone ? " is-done" : " is-loading"}`}>
-                  {isDone ? (
-                    <>
-                      <div className="tr-doc-card-label">Your translated document</div>
-                      <div className="tr-doc-card-icon">
-                        <div className="tr-done-icon">
-                          <svg width="52" height="62" viewBox="0 0 30 36" fill="none">
-                            <path d="M3 0C1.34 0 0 1.34 0 3V33C0 34.66 1.34 36 3 36H27C28.66 36 30 34.66 30 33V9L21 0H3Z" fill="#d6e8d6"/>
-                            <path d="M21 0L30 9H21V0Z" fill="#b8d4b8"/>
-                            <rect x="6" y="15" width="18" height="2" rx="1" fill="#7aaa7a"/>
-                            <rect x="6" y="20" width="13" height="2" rx="1" fill="#7aaa7a"/>
-                            <rect x="6" y="25" width="15" height="2" rx="1" fill="#7aaa7a"/>
-                          </svg>
-                          <span className="tr-done-flag">{selectedLang?.flag}</span>
+              ) : (
+                <div className="tr-history-list">
+                  {history.map((item) => {
+                    const lang = LANG_MAP[item.target_lang];
+                    const isDocx = item.filename.toLowerCase().endsWith(".docx");
+                    const date = new Date(item.created_at).toLocaleDateString("en-GB", {
+                      day: "numeric", month: "short", year: "numeric",
+                    });
+                    return (
+                      <div key={item.id} className="tr-history-row">
+                        <span className="tr-history-icon" aria-hidden="true">
+                          {isDocx ? "📝" : "📄"}
+                        </span>
+                        <div className="tr-history-info">
+                          <div className="tr-history-name" title={item.filename}>
+                            {item.filename}
+                          </div>
+                          <div className="tr-history-meta">
+                            {lang ? `${lang.flag} ${lang.name}` : item.target_lang}
+                            {" · "}
+                            {item.credits_deducted} credit{item.credits_deducted !== 1 ? "s" : ""}
+                            {" · "}
+                            {date}
+                          </div>
                         </div>
+                        <button
+                          className="tr-history-action"
+                          type="button"
+                          onClick={() => handleTranslateAgain(item.target_lang)}
+                          title={`Translate another file to ${lang?.name ?? item.target_lang}`}
+                        >
+                          Translate again →
+                        </button>
                       </div>
-                      <div className="tr-doc-card-name">{downloadName}</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="tr-doc-card-label">
-                        Your translated document
-                      </div>
-                      <div className="tr-steps-list">
-                        {STEPS.map((step, i) => {
-                          const currentStep = Math.min(Math.floor(progress / 20), STEPS.length - 1);
-                          const done   = i < currentStep;
-                          const active = i === currentStep;
-                          return (
-                            <div
-                              key={i}
-                              className={`tr-step-item${done ? " done" : active ? " active" : " pending"}`}
-                            >
-                              <span className="tr-step-bullet" aria-hidden="true">
-                                {done ? "✓" : active ? "✦" : "·"}
-                              </span>
-                              <span className="tr-step-label">{step}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-              </div>
-
-              {isDone && (
-                <div className="translator-actions">
-                  <a
-                    href={downloadUrl!}
-                    download={downloadName}
-                    className="btn-download translator-btn-full"
-                  >
-                    ↓ Download translated file
-                  </a>
-                  <button onClick={reset} className="translator-btn-reset" type="button">
-                    Translate another file
-                  </button>
+                    );
+                  })}
                 </div>
               )}
             </>
           )}
 
         </div>
+
       </main>
 
-      {/* ── DOCUMENT READY MODAL ──────────────────────────────────────── */}
+      {/* ── DOCUMENT READY MODAL ─────────────────────────────────────────── */}
       {modalDone && (
         <div
           className="ready-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Your document is ready"
           onClick={() => setModalDone(false)}
         >
-          <div
-            className="ready-modal"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close button */}
+          <div className="ready-modal" onClick={(e) => e.stopPropagation()}>
             <button
               className="ready-close"
               onClick={() => setModalDone(false)}
@@ -488,61 +577,28 @@ export default function TranslatorPage() {
                 <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
               </svg>
             </button>
-
-            {/* Icon composition: document + checkmark badge */}
             <div className="ready-icon-wrap" aria-hidden="true">
-              <div className="ready-doc-icon">
-                {/* Document SVG — warm beige, corner fold, consistent with app style */}
-                <svg width="72" height="86" viewBox="0 0 30 36" fill="none">
-                  <path d="M3 0C1.34 0 0 1.34 0 3V33C0 34.66 1.34 36 3 36H27C28.66 36 30 34.66 30 33V9L21 0H3Z" fill="#E5DDD5"/>
-                  <path d="M21 0L30 9H21V0Z" fill="#C9BEB4"/>
-                  <rect x="6" y="14" width="18" height="2" rx="1" fill="#B8ADA6"/>
-                  <rect x="6" y="19" width="13" height="2" rx="1" fill="#B8ADA6"/>
-                  <rect x="6" y="24" width="15" height="2" rx="1" fill="#B8ADA6"/>
-                  <rect x="6" y="29" width="10" height="2" rx="1" fill="#B8ADA6"/>
-                </svg>
-                {/* Checkmark badge — solid sage circle, white check */}
-                <div className="ready-check-badge" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                    <circle cx="9" cy="9" r="9" fill="var(--sage)"/>
-                    <path d="M5 9.5L7.5 12L13 6.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            {/* Heading + filename */}
-            <h2 className="ready-heading">Your document is ready</h2>
-            <p className="ready-filename" title={downloadName}>{downloadName}</p>
-
-            {/* Language pill */}
-            {selectedLang && (
-              <div className="ready-lang-pill">
-                {selectedLang.name}
-              </div>
-            )}
-
-            {/* Download CTA */}
-            <a
-              href={downloadUrl ?? "#"}
-              download={downloadName}
-              className="ready-download-btn"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M8 2V11M8 11L4.5 7.5M8 11L11.5 7.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M2 13H14" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+              <svg width="72" height="86" viewBox="0 0 30 36" fill="none">
+                <path d="M3 0C1.34 0 0 1.34 0 3V33C0 34.66 1.34 36 3 36H27C28.66 36 30 34.66 30 33V9L21 0H3Z" fill="#d6e8d6"/>
+                <path d="M21 0L30 9H21V0Z" fill="#b8d4b8"/>
+                <rect x="6" y="15" width="18" height="2" rx="1" fill="#7aaa7a"/>
+                <rect x="6" y="20" width="13" height="2" rx="1" fill="#7aaa7a"/>
+                <rect x="6" y="25" width="15" height="2" rx="1" fill="#7aaa7a"/>
               </svg>
-              Download your translation
-            </a>
-
-            {/* Translate another document link */}
-            <button
-              className="ready-reset-link"
-              onClick={reset}
-              type="button"
-            >
-              Translate another document
-            </button>
+            </div>
+            <h3>Translation complete!</h3>
+            <p>Your translated file is ready — same layout, same branding, new language.</p>
+            {downloadUrl && (
+              <a
+                href={downloadUrl}
+                download={downloadName}
+                className="btn-primary"
+                style={{ margin: "0 auto 1rem", display: "inline-flex" }}
+                onClick={() => setModalDone(false)}
+              >
+                ↓ Download file
+              </a>
+            )}
           </div>
         </div>
       )}
