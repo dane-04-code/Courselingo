@@ -118,10 +118,68 @@ def _handle_docx(
     )
 
 
+def _chars_to_credits(n: int) -> int:
+    """Map character count to credit cost using agreed tier thresholds."""
+    if n <= 20_000:  return 1
+    if n <= 60_000:  return 2
+    if n <= 120_000: return 4
+    return 6
+
+
 # ── Health check ─────────────────────────────────────────────────────
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ── Estimate endpoint ────────────────────────────────────────────────
+@app.post("/estimate")
+async def estimate_characters(file: UploadFile = File(...)):
+    """Return character count and credit cost for a file without translating it."""
+    content = await file.read()
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File exceeds 20 MB limit.")
+
+    name = (file.filename or "").lower()
+
+    if name.endswith(".pdf"):
+        import fitz
+        try:
+            doc = fitz.open(stream=content, filetype="pdf")
+            total_chars = sum(
+                len(b[4])
+                for page in doc
+                for b in page.get_text("blocks")
+                if b[6] == 0  # 0 = text block, 1 = image block
+            )
+            doc.close()
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Failed to read PDF: {exc}")
+
+    elif name.endswith(".docx"):
+        from docx import Document
+        import io
+        try:
+            doc = Document(io.BytesIO(content))
+            total_chars = sum(len(p.text) for p in doc.paragraphs)
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        total_chars += len(cell.text)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Failed to read DOCX: {exc}")
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF and DOCX files are supported.",
+        )
+
+    return {
+        "char_count": total_chars,
+        "credits_required": _chars_to_credits(total_chars),
+    }
 
 
 # ── Translate endpoint ───────────────────────────────────────────────
