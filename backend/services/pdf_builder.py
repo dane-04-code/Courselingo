@@ -2,24 +2,80 @@
 
 Strategy:
   1. Open the original PDF (preserves images, backgrounds, shapes).
-  2. Pass 1 — measure: calculate the fitted font size per block using expanded
-     boxes (x1 already widened by parser; y1 expanded 40% here). Then apply
-     per-page body-text normalisation: all body-text blocks (font_size <= 14pt)
-     on a page use the minimum fitted size across the group for visual consistency.
-  3. Pass 2 — render: redact the expanded area with white, then insert text.
+  2. Compute "safe rects" for each block: x1 (already widened 30% by the
+     parser) and y1 (expanded 40% here) are clamped so they never intrude
+     into a neighbouring block's original bounding box.  This prevents
+     overlapping text in dense layouts.
+  3. Pass 1 — measure: calculate the fitted font size per block using the
+     safe rects.  Each block gets its own individually fitted size (no
+     group normalisation that could drag every block down to one outlier's
+     minimum).
+  4. Pass 2 — render: redact the safe area with white, then insert text.
 """
 
 from __future__ import annotations
 
 import io
-import os
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import fitz  # PyMuPDF
 
 
+# ── Bundled NotoSans font registry ───────────────────────────────────
+# Each key also becomes the fontname registered inside each PDF document,
+# so they must be unique per file.  Fonts that don't exist on disk are
+# silently omitted; callers fall back to "noto" (general Unicode).
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
+
+_FONT_REGISTRY: dict[str, str] = {}
+for _key, _fname in [
+    ("noto",    "NotoSans.ttf"),
+    ("noto-jp", "NotoSansJP.ttf"),
+    ("noto-kr", "NotoSansKR.ttf"),
+    ("noto-sc", "NotoSansSC.ttf"),
+    # Arabic/Hebrew: add ("noto-ar", "NotoSansArabic.ttf") etc. once those
+    # font files are placed in backend/fonts/ and RTL rendering is handled.
+]:
+    _p = _FONTS_DIR / _fname
+    if _p.exists():
+        _FONT_REGISTRY[_key] = str(_p)
+
+
+def _detect_script(text: str) -> str:
+    """Return the font-registry key for the dominant script in *text*.
+
+    Scans left-to-right and returns on the first non-Latin character found,
+    so mixed documents (e.g. Japanese kanji + hiragana) are handled correctly.
+    """
+    for char in text:
+        cp = ord(char)
+        if 0x3040 <= cp <= 0x30FF:                              # Hiragana / Katakana
+            return "noto-jp"
+        if 0xAC00 <= cp <= 0xD7AF or 0x1100 <= cp <= 0x11FF:  # Hangul
+            return "noto-kr"
+        if (0x4E00 <= cp <= 0x9FFF                             # CJK Unified Ideographs
+                or 0x3400 <= cp <= 0x4DBF                      # CJK Extension A
+                or 0x20000 <= cp <= 0x2A6DF):                  # CJK Extension B
+            return "noto-sc"
+    return "noto"
+
+
+def _font_for_text(text: str) -> tuple[str, str | None]:
+    """Return *(fontname, fontfile_path)* for inserting *text* into a PDF.
+
+    Falls back to the generic NotoSans if the script-specific file is missing.
+    Returns (fontname, None) only when no NotoSans font is available at all,
+    in which case callers must use a Base14 fallback.
+    """
+    key = _detect_script(text)
+    path = _FONT_REGISTRY.get(key) or _FONT_REGISTRY.get("noto")
+    return key, path
+
+
 # ── Font mapping ─────────────────────────────────────────────────────
+# Kept for Base14 fallback only (used when no NotoSans TTF is found on disk).
 # PyMuPDF insert_textbox() uses short Base14 font codes:
 #   helv/heit/hebo/hebi  → Helvetica family
 #   tiro/tiit/tibo/tibi  → Times family
@@ -64,27 +120,6 @@ def _map_font(pdf_font_name: str) -> str:
     return "helv"
 
 
-# ── Unicode font resolution ──────────────────────────────────────────
-# Always prefer a Unicode TTF over Base14 fonts so that bullet points,
-# accented characters, and non-Latin glyphs all render correctly.
-
-_TTF_CANDIDATES = [
-    "C:/Windows/Fonts/arial.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-]
-
-_UNIFONT_NAME = "unifont"
-
-
-def _find_unicode_font() -> str | None:
-    """Return path to a Unicode TTF on this system, or None."""
-    for path in _TTF_CANDIDATES:
-        if os.path.exists(path):
-            return path
-    return None
-
-
 # ── Font-size fitting ────────────────────────────────────────────────
 
 MIN_FONT_SIZE = 7.0
@@ -93,35 +128,34 @@ MIN_FONT_SIZE = 7.0
 def _calc_fitted_size(
     scratch_page: fitz.Page,
     text: str,
-    fontname: str,
+    noto_key: str,
+    noto_file: str | None,
     fontsize: float,
     box_width: float,
     box_height: float,
-    unicode_font_path: str | None,
 ) -> float:
-    """
-    Return the largest font size <= *fontsize* at which *text* fits in the box.
+    """Return the largest font size <= *fontsize* at which *text* fits in the box.
 
     Uses *scratch_page* for accurate measurement via insert_textbox() without
-    touching the real document. Multiple calls on the same scratch page are safe
-    because insert_textbox() measures purely geometrically.
+    touching the real document.  *noto_key* is the unique fontname registered
+    per PDF document (one key per TTF file), *noto_file* is its path.
     """
     measure_rect = fitz.Rect(0, 0, box_width, box_height)
     size = fontsize
 
     while size > MIN_FONT_SIZE:
-        if unicode_font_path:
+        if noto_file:
             rc = scratch_page.insert_textbox(
                 measure_rect, text,
                 fontsize=size,
-                fontfile=unicode_font_path,
-                fontname=_UNIFONT_NAME,
+                fontfile=noto_file,
+                fontname=noto_key,
             )
         else:
             rc = scratch_page.insert_textbox(
                 measure_rect, text,
                 fontsize=size,
-                fontname=fontname,
+                fontname="helv",
             )
         if rc >= 0:
             return size
@@ -134,27 +168,92 @@ def _insert_text(
     page: fitz.Page,
     rect: fitz.Rect,
     text: str,
-    fontname: str,
+    noto_key: str,
+    noto_file: str | None,
     fontsize: float,
-    unicode_font_path: str | None,
 ) -> None:
-    """Insert *text* into *rect* at exactly *fontsize*."""
-    if unicode_font_path:
+    """Insert *text* into *rect* at exactly *fontsize* using the chosen NotoSans TTF."""
+    if noto_file:
         page.insert_textbox(
             rect, text,
             fontsize=fontsize,
-            fontfile=unicode_font_path,
-            fontname=_UNIFONT_NAME,
+            fontfile=noto_file,
+            fontname=noto_key,
         )
     else:
-        page.insert_textbox(rect, text, fontsize=fontsize, fontname=fontname)
+        page.insert_textbox(rect, text, fontsize=fontsize, fontname="helv")
+
+
+# ── Neighbour-aware rect expansion ──────────────────────────────────
+
+_NEIGHBOUR_GAP = 2.0  # minimum gap (points) between expanded rects
+
+
+def _compute_safe_rects(
+    blocks: list[dict[str, Any]],
+    doc: fitz.Document,
+) -> list[fitz.Rect]:
+    """
+    Compute expanded rects that never overlap a neighbouring block.
+
+    * x1 was already widened +30% by the parser — clamped here against
+      blocks that sit to the right at the same vertical level.
+    * y1 is expanded +40% of original height — clamped against the
+      nearest block below that shares horizontal space.
+
+    This eliminates text-over-text overlap in dense or multi-column PDFs.
+    """
+    by_page: dict[int, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+    for i, block in enumerate(blocks):
+        by_page[block["page_number"]].append((i, block))
+
+    rects: list[fitz.Rect] = [fitz.Rect(0, 0, 0, 0)] * len(blocks)
+
+    for page_num, entries in by_page.items():
+        page_w = doc[page_num].rect.width
+        page_h = doc[page_num].rect.height
+
+        for _, (i, block) in enumerate(entries):
+            x0 = block["x0"]
+            y0 = block["y0"]
+            x1 = block["x1"]                               # parser-expanded
+            orig_h = block["y1"] - block["y0"]
+            y1 = block["y1"] + 0.40 * orig_h               # builder-expanded
+
+            for _, (j, nb) in enumerate(entries):
+                if j == i:
+                    continue
+
+                # ── Vertical clamp ───────────────────────────────
+                # If nb is below us and shares horizontal space,
+                # our y1 must not enter nb's original y0.
+                if (nb["y0"] > y0
+                        and nb["x0"] < x1 and x0 < nb["x1"]
+                        and y1 > nb["y0"] - _NEIGHBOUR_GAP):
+                    y1 = max(block["y1"], nb["y0"] - _NEIGHBOUR_GAP)
+
+                # ── Horizontal clamp ─────────────────────────────
+                # If nb is to our right and shares vertical space,
+                # our x1 must not enter nb's original x0.
+                if (nb["x0"] > x0
+                        and nb["y0"] < y1 and y0 < nb["y1"]
+                        and x1 > nb["x0"] - _NEIGHBOUR_GAP):
+                    # Floor at the pre-expansion x1 so we never shrink
+                    # smaller than the original bounding box.
+                    orig_w = (block["x1"] - x0) / 1.30
+                    orig_x1 = x0 + orig_w
+                    x1 = max(orig_x1, nb["x0"] - _NEIGHBOUR_GAP)
+
+            rects[i] = fitz.Rect(x0, y0, min(x1, page_w), min(y1, page_h))
+
+    return rects
 
 
 # ── Public API ───────────────────────────────────────────────────────
 
 def build_translated_pdf(
     blocks: list[dict[str, Any]],
-    page_dims: list[dict[str, float]],  # kept for call-site compatibility; dims read directly from doc
+    page_dims: list[dict[str, float]],  # kept for call-site compatibility
     original_pdf_bytes: bytes,
 ) -> bytes:
     """
@@ -169,83 +268,71 @@ def build_translated_pdf(
     Returns:
         Raw bytes of the translated PDF.
     """
-    unicode_font_path = _find_unicode_font()
+    doc = fitz.open(stream=original_pdf_bytes, filetype="pdf")
 
-    # Index blocks by page for efficient lookup
-    pages: dict[int, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
-    for i, block in enumerate(blocks):
-        pages[block["page_number"]].append((i, block))
+    # ── Compute safe rects (neighbour-aware) ─────────────────────────
+    safe_rects = _compute_safe_rects(blocks, doc)
 
-    # ── Pass 1: measure fitted sizes ─────────────────────────────────
-    # Boxes are measured with x1 already expanded by the parser (+30% width)
-    # and y1 expanded here by 40% of original height, giving translated text
-    # more room before font-size reduction kicks in.
-
+    # ── Pass 1: measure fitted sizes using safe rects ────────────────
+    # Resolve each block's font up front so pass 2 can reuse the result.
     fitted: list[float] = [0.0] * len(blocks)
+    block_fonts: list[tuple[str, str | None]] = []
 
     with fitz.open() as scratch_doc:
         scratch_page = scratch_doc.new_page(width=10000, height=10000)
         for i, block in enumerate(blocks):
             text = block["text"].strip()
+            noto_key, noto_file = _font_for_text(text) if text else ("noto", _FONT_REGISTRY.get("noto"))
+            block_fonts.append((noto_key, noto_file))
             if not text:
                 fitted[i] = block["font_size"]
                 continue
-            orig_height = block["y1"] - block["y0"]
+            rect = safe_rects[i]
             fitted[i] = _calc_fitted_size(
                 scratch_page,
                 text,
-                _map_font(block["font_name"]),
+                noto_key,
+                noto_file,
                 block["font_size"],
-                block["x1"] - block["x0"],          # x1 already expanded by parser
-                orig_height * 1.40,                  # +40% vertical room
-                unicode_font_path,
+                rect.width,
+                rect.height,
             )
 
-    # Per-group normalisation: blocks that share the same original font_size on
-    # the same page all render at the group's minimum fitted size.  This keeps
-    # body paragraphs consistent with each other, and headings consistent with
-    # other headings, without one group pulling down another.
-    group_min: dict[tuple[int, float], float] = defaultdict(lambda: float("inf"))
-    for i, block in enumerate(blocks):
-        if block["text"].strip():
-            key = (block["page_number"], block["font_size"])
-            group_min[key] = min(group_min[key], fitted[i])
-
-    for i, block in enumerate(blocks):
-        if block["text"].strip():
-            key = (block["page_number"], block["font_size"])
-            fitted[i] = group_min[key]
+    # No group normalisation — each block keeps its own fitted size.
+    # The old approach (minimum across all same-size blocks on a page)
+    # caused one long translation to shrink EVERY paragraph on the page.
 
     # ── Pass 2: redact + insert on the real document ─────────────────
-    with fitz.open(stream=original_pdf_bytes, filetype="pdf") as doc:
-        for page_idx in range(len(doc)):
-            page_entries = pages.get(page_idx, [])
-            if not page_entries:
+    pages: dict[int, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+    for i, block in enumerate(blocks):
+        pages[block["page_number"]].append((i, block))
+
+    for page_idx in range(len(doc)):
+        page_entries = pages.get(page_idx, [])
+        if not page_entries:
+            continue
+
+        page = doc[page_idx]
+
+        # Redact using the original (tight) bounding box — not the expanded
+        # safe rect — so the white erase area matches the original text footprint
+        # and doesn't leave a large visible white gap below the translated text.
+        for i, block in page_entries:
+            orig_rect = fitz.Rect(block["x0"], block["y0"], block["x1"], block["y1"])
+            page.add_redact_annot(orig_rect, fill=(1, 1, 1))
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+
+        # Insert translated text into the expanded safe rect so longer
+        # translations have room to flow without being clipped.
+        for i, block in page_entries:
+            text = block["text"].strip()
+            if not text:
                 continue
+            noto_key, noto_file = block_fonts[i]
+            _insert_text(page, safe_rects[i], text, noto_key, noto_file, fitted[i])
 
-            page = doc[page_idx]
-
-            # Redact using the same expanded rect that text will be drawn into.
-            # x1 is already expanded by the parser; y1 is expanded +40% here.
-            for _, block in page_entries:
-                orig_height = block["y1"] - block["y0"]
-                y1_expanded = block["y1"] + 0.40 * orig_height
-                rect = fitz.Rect(block["x0"], block["y0"], block["x1"], y1_expanded)
-                page.add_redact_annot(rect, fill=(1, 1, 1))
-            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-
-            # Insert translated text into the expanded rect at each block's fitted size
-            for i, block in page_entries:
-                text = block["text"].strip()
-                if not text:
-                    continue
-                orig_height = block["y1"] - block["y0"]
-                y1_expanded = block["y1"] + 0.40 * orig_height
-                rect = fitz.Rect(block["x0"], block["y0"], block["x1"], y1_expanded)
-                fontname = _map_font(block["font_name"])
-                _insert_text(page, rect, text, fontname, fitted[i], unicode_font_path)
-
-        buf = io.BytesIO()
-        doc.save(buf)
+    buf = io.BytesIO()
+    doc.save(buf)
+    doc.close()
 
     return buf.getvalue()

@@ -86,15 +86,35 @@ function PostCard({ post }: { post: Post }) {
 /* ── Newsletter ── */
 function NewsletterSection() {
   const [email, setEmail] = useState("");
-  const [state, setState] = useState<"idle" | "loading" | "done">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     setState("loading");
-    // TODO: wire up to your email service (Mailchimp, Resend, ConvertKit, etc.)
-    await new Promise((r) => setTimeout(r, 900));
-    setState("done");
+    setErrorMsg("");
+
+    try {
+      const res = await fetch("/api/newsletter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setState("error");
+        setErrorMsg(data.error || "Something went wrong.");
+        return;
+      }
+
+      setState("done");
+    } catch {
+      setState("error");
+      setErrorMsg("Network error. Please try again.");
+    }
   };
 
   return (
@@ -117,21 +137,26 @@ function NewsletterSection() {
             You&apos;re on the list — look out for our next issue.
           </div>
         ) : (
-          <form className="blog-newsletter-form" onSubmit={handleSubmit}>
-            <input
-              type="email"
-              className="blog-newsletter-input"
-              placeholder="your@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              disabled={state === "loading"}
-              aria-label="Email address"
-            />
-            <button type="submit" className="blog-newsletter-btn" disabled={state === "loading"}>
-              {state === "loading" ? <span className="blog-nl-spinner" aria-hidden="true" /> : "Subscribe"}
-            </button>
-          </form>
+          <>
+            <form className="blog-newsletter-form" onSubmit={handleSubmit}>
+              <input
+                type="email"
+                className="blog-newsletter-input"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={state === "loading"}
+                aria-label="Email address"
+              />
+              <button type="submit" className="blog-newsletter-btn" disabled={state === "loading"}>
+                {state === "loading" ? <span className="blog-nl-spinner" aria-hidden="true" /> : "Subscribe"}
+              </button>
+            </form>
+            {state === "error" && (
+              <p style={{ color: "#ff9b8a", fontSize: "0.85rem", marginTop: "0.75rem" }}>{errorMsg}</p>
+            )}
+          </>
         )}
         <p className="blog-newsletter-disclaimer">No spam. Unsubscribe anytime.</p>
       </div>

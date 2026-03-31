@@ -41,6 +41,7 @@ export async function getBlogPost(slug: string): Promise<Post | null> {
       },
     });
     if (!response.results.length) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const page = response.results[0] as any;
     const props = page.properties;
     const rawDate: string | undefined = props["Publish Date"]?.date?.start;
@@ -66,8 +67,10 @@ export async function getPageBlocks(pageId: string): Promise<Block[]> {
   if (!process.env.NOTION_TOKEN) return [];
   try {
     const response = await notion.blocks.children.list({ block_id: pageId, page_size: 100 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (response.results as any[]).map((block): Block => {
       const richText = block[block.type]?.rich_text ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const plainText = richText.map((t: any) => t.plain_text).join("");
       switch (block.type) {
         case "image":
@@ -77,6 +80,7 @@ export async function getPageBlocks(pageId: string): Promise<Block[]> {
         case "callout":
           return { type: "callout", text: plainText, icon: block.callout?.icon?.emoji ?? "💡" };
         default:
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           return { type: block.type, text: plainText, richText: richText.map((t: any) => ({ plain_text: t.plain_text, href: t.href, annotations: t.annotations })) };
       }
     });

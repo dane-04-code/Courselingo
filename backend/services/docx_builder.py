@@ -6,17 +6,51 @@ import io
 from typing import Any
 
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+
+
+# ── Script detection & font mapping ──────────────────────────────────
+# DOCX uses w:rFonts/@w:eastAsia for CJK text.  We set the font name to a
+# well-known NotoSans family so viewers that have it installed render
+# correctly; viewers without it fall back to their OS CJK font.
+_SCRIPT_EAST_ASIA_FONT: dict[str, str] = {
+    "jp": "Noto Sans JP",
+    "kr": "Noto Sans KR",
+    "sc": "Noto Sans SC",
+}
+
+
+def _detect_cjk_script(text: str) -> str | None:
+    """Return a script key if *text* contains CJK characters, else None."""
+    for char in text:
+        cp = ord(char)
+        if 0x3040 <= cp <= 0x30FF:                              # Hiragana / Katakana
+            return "jp"
+        if 0xAC00 <= cp <= 0xD7AF or 0x1100 <= cp <= 0x11FF:  # Hangul
+            return "kr"
+        if (0x4E00 <= cp <= 0x9FFF                             # CJK Unified Ideographs
+                or 0x3400 <= cp <= 0x4DBF                      # CJK Extension A
+                or 0x20000 <= cp <= 0x2A6DF):                  # CJK Extension B
+            return "sc"
+    return None
+
+
+def _apply_east_asia_font(run, font_name: str) -> None:
+    """Set w:rFonts/@w:eastAsia on *run* so CJK glyphs use the right font."""
+    rPr = run._r.get_or_add_rPr()
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        rFonts = OxmlElement("w:rFonts")
+        rPr.insert(0, rFonts)
+    rFonts.set(qn("w:eastAsia"), font_name)
 
 
 def _replace_paragraph_text(paragraph, new_text: str) -> None:
-    """
-    Replace the visible text of a *paragraph* while preserving the
-    formatting of the **first run**.
+    """Replace the visible text of *paragraph* while preserving first-run formatting.
 
-    Strategy:
-      1. Put the full translated text into the first run.
-      2. Clear every subsequent run's text (keeps XML structure intact
-         so styles, numbering, etc. aren't broken).
+    Also sets the east-Asian font on the first run when the translated text
+    contains CJK characters, so viewers render the correct glyphs.
     """
     runs = paragraph.runs
     if not runs:
@@ -25,6 +59,10 @@ def _replace_paragraph_text(paragraph, new_text: str) -> None:
     runs[0].text = new_text
     for run in runs[1:]:
         run.text = ""
+
+    script = _detect_cjk_script(new_text)
+    if script:
+        _apply_east_asia_font(runs[0], _SCRIPT_EAST_ASIA_FONT[script])
 
 
 def build_translated_docx(

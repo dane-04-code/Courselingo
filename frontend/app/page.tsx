@@ -208,9 +208,7 @@ export default function Home() {
       )}
 
       <nav style={{ top: bannerVisible ? "44px" : "0" }}>
-        <a href="#" className="logo">
-          Course<span className="logo-dot">Lingo</span>
-        </a>
+        <a href="#" className="logo">Course<span className="logo-dot">Lingo</span></a>
         <ul className="nav-links">
           <li><a href="#how">How it works</a></li>
           <li><a href="#pricing">Pricing</a></li>

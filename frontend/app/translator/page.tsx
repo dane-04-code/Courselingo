@@ -52,10 +52,6 @@ const LANG_MAP = Object.fromEntries(LANGUAGES.map((l) => [l.code, l]));
 
 /* ─── helpers ───────────────────────────────────────────────────────────── */
 
-function formatBytes(bytes: number): string {
-  const mb = bytes / 1024 / 1024;
-  return mb >= 1 ? `${mb.toFixed(2)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
-}
 
 /* ─── component ─────────────────────────────────────────────────────────── */
 
@@ -85,7 +81,6 @@ export default function TranslatorPage() {
   const [dragging, setDragging]       = useState(false);
 
   /* modal progress */
-  const [showModal, setShowModal]     = useState(false);
   const [progress, setProgress]       = useState(0);
   const [stepText, setStepText]       = useState(STEPS[0]);
   const [modalDone, setModalDone]     = useState(false);
@@ -216,7 +211,6 @@ export default function TranslatorPage() {
     setStatus("idle");
     setErrorMsg("");
     setDownloadUrl(null);
-    setShowModal(false);
     setModalDone(false);
     setProgress(0);
     if (progressInterval.current) clearInterval(progressInterval.current);
@@ -250,7 +244,6 @@ export default function TranslatorPage() {
     if (!file) return;
     setStatus("uploading");
     setErrorMsg("");
-    setShowModal(true);
     startFakeProgress();
 
     try {
@@ -280,7 +273,6 @@ export default function TranslatorPage() {
       fetchCreditsAndHistory();
     } catch (err: unknown) {
       if (progressInterval.current) clearInterval(progressInterval.current);
-      setShowModal(false);
 
       if (axios.isAxiosError(err) && err.response) {
         const data = err.response.data;
