@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
+import fitz
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -119,12 +120,14 @@ def _handle_docx(
     )
 
 
-def _chars_to_credits(n: int) -> int:
-    """Map character count to credit cost using agreed tier thresholds."""
-    if n <= 20_000:  return 1
-    if n <= 60_000:  return 2
-    if n <= 120_000: return 4
-    return 6
+def _pages_to_credits(n: int) -> int:
+    """Map page count to credit cost. Raises ValueError if over 300-page cap."""
+    if n > 300:
+        raise ValueError("Document exceeds the 300-page limit.")
+    if n <= 25:  return 1
+    if n <= 75:  return 2
+    if n <= 150: return 3
+    return 4
 
 
 # ── Health check ─────────────────────────────────────────────────────
@@ -136,7 +139,7 @@ def health() -> dict[str, str]:
 # ── Estimate endpoint ────────────────────────────────────────────────
 @app.post("/estimate")
 async def estimate_characters(file: UploadFile = File(...)):
-    """Return character count and credit cost for a file without translating it."""
+    """Return page count, character count, and credit cost without translating."""
     content = await file.read()
 
     if len(content) > MAX_FILE_SIZE:
@@ -146,6 +149,9 @@ async def estimate_characters(file: UploadFile = File(...)):
 
     if name.endswith(".pdf"):
         try:
+            doc = fitz.open(stream=content, filetype="pdf")
+            page_count = doc.page_count
+            doc.close()
             blocks = extract_text_blocks(content)
             total_chars = sum(len(b["text"]) for b in blocks)
         except Exception as exc:
@@ -155,18 +161,23 @@ async def estimate_characters(file: UploadFile = File(...)):
         try:
             segs = extract_text_segments(content)
             total_chars = sum(len(s["text"]) for s in segs)
+            # DOCX has no native page count — estimate from paragraph count
+            page_count = max(1, len(segs) // 20)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Failed to read DOCX: {exc}")
 
     else:
-        raise HTTPException(
-            status_code=400,
-            detail="Only PDF and DOCX files are supported.",
-        )
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported.")
+
+    try:
+        credits = _pages_to_credits(page_count)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     return {
         "char_count": total_chars,
-        "credits_required": _chars_to_credits(total_chars),
+        "page_count": page_count,
+        "credits_required": credits,
     }
 
 
@@ -220,6 +231,16 @@ async def translate_document(
             status_code=413,
             detail=f"File too large. Maximum allowed size is {MAX_FILE_SIZE // (1024 * 1024)} MB.",
         )
+
+    # Enforce 300-page cap for PDFs
+    if is_pdf:
+        try:
+            _doc = fitz.open(stream=file_bytes, filetype="pdf")
+            _page_count = _doc.page_count
+            _doc.close()
+            _pages_to_credits(_page_count)  # raises ValueError if > 300
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     # ── Branch: DOCX vs PDF ──────────────────────────────────────
     if is_docx:
