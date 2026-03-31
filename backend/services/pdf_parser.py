@@ -148,44 +148,45 @@ def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
             x1_expanded = min(raw_bbox[2] + 0.30 * block_width, page_width)
 
             # ── Emit one TextBlock per paragraph group ────────────────
+            # Each paragraph group is further split into per-bullet-item
+            # sub-groups so that multi-bullet blocks don't bleed across
+            # item boundaries when the translated text wraps differently.
             for group in para_groups:
-                # Build text with smart line joining:
-                # new list items get \n; word-wrap continuations get a space.
-                line_parts = [
-                    (lt, bool(_LIST_ITEM_RE.match(lt)))
-                    for lt, _, _ in group
-                ]
-                parts = [line_parts[0][0]]
-                for line_text, is_new_item in line_parts[1:]:
-                    parts.append(("\n" if is_new_item else " ") + line_text)
-                full_text = "".join(parts).strip()
-                if not full_text:
-                    continue
+                for bullet_group in _split_bullet_items(group):
+                    # All lines after the first are continuations —
+                    # join with space (no \n needed; each bullet is its
+                    # own TextBlock now).
+                    parts = [bullet_group[0][0]]
+                    for lt, _, _ in bullet_group[1:]:
+                        parts.append(" " + lt)
+                    full_text = "".join(parts).strip()
+                    if not full_text:
+                        continue
 
-                all_spans = [span for _, _, spans in group for span in spans]
-                font_name, font_size = _dominant_font(all_spans)
+                    all_spans = [span for _, _, spans in bullet_group for span in spans]
+                    font_name, font_size = _dominant_font(all_spans)
 
-                # Use actual line y-coordinates — not equal slices.
-                group_y0 = group[0][1][1]   # top of first line
-                group_y1 = group[-1][1][3]  # bottom of last line
+                    # Use actual line y-coordinates — not equal slices.
+                    group_y0 = bullet_group[0][1][1]   # top of first line
+                    group_y1 = bullet_group[-1][1][3]  # bottom of last line
 
-                first_span = all_spans[0] if all_spans else None
-                if first_span and "origin" in first_span:
-                    baseline_y = first_span["origin"][1]
-                else:
-                    baseline_y = group_y0 + font_size
+                    first_span = all_spans[0] if all_spans else None
+                    if first_span and "origin" in first_span:
+                        baseline_y = first_span["origin"][1]
+                    else:
+                        baseline_y = group_y0 + font_size
 
-                blocks.append(asdict(TextBlock(
-                    page_number=page_num,
-                    x0=raw_bbox[0],
-                    y0=group_y0,
-                    x1=x1_expanded,
-                    y1=group_y1,
-                    text=full_text,
-                    font_size=round(font_size, 2),
-                    font_name=font_name,
-                    baseline_y=round(baseline_y, 2),
-                )))
+                    blocks.append(asdict(TextBlock(
+                        page_number=page_num,
+                        x0=raw_bbox[0],
+                        y0=group_y0,
+                        x1=x1_expanded,
+                        y1=group_y1,
+                        text=full_text,
+                        font_size=round(font_size, 2),
+                        font_name=font_name,
+                        baseline_y=round(baseline_y, 2),
+                    )))
 
     doc.close()
     return blocks
