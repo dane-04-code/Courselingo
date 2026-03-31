@@ -174,3 +174,41 @@ def test_build_bullet_points_do_not_raise():
     page_dims = [{"width": 612.0, "height": 792.0}]
     result = build_translated_pdf(blocks, page_dims, original)
     assert result[:4] == b"%PDF"
+
+
+def test_build_translated_pdf_watermark_does_not_crash():
+    """watermark=True should produce a valid PDF without raising."""
+    pdf_bytes = _make_pdf_with_text("Hello world")
+    blocks = [
+        {
+            "text": "Bonjour le monde",
+            "page_number": 0,
+            "x0": 72.0, "y0": 88.0, "x1": 200.0, "y1": 104.0,
+            "font_size": 12.0,
+            "font_name": "Helvetica",
+        }
+    ]
+    page_dims = [{"width": 612.0, "height": 792.0}]
+    result = build_translated_pdf(blocks, page_dims, pdf_bytes, watermark=True)
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+    doc = fitz.open(stream=result, filetype="pdf")
+    assert doc.page_count == 1
+    doc.close()
+
+
+def test_build_translated_pdf_no_watermark_by_default():
+    """watermark defaults to False — old 3-arg call still works."""
+    pdf_bytes = _make_pdf_with_text("Hello world")
+    blocks = [
+        {
+            "text": "Bonjour le monde",
+            "page_number": 0,
+            "x0": 72.0, "y0": 88.0, "x1": 200.0, "y1": 104.0,
+            "font_size": 12.0,
+            "font_name": "Helvetica",
+        }
+    ]
+    page_dims = [{"width": 612.0, "height": 792.0}]
+    result = build_translated_pdf(blocks, page_dims, pdf_bytes)
+    assert isinstance(result, bytes)

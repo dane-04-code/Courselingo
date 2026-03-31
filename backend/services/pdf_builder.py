@@ -251,10 +251,43 @@ def _compute_safe_rects(
 
 # ── Public API ───────────────────────────────────────────────────────
 
+def _add_watermark_badge(page: fitz.Page) -> None:
+    """Draw a small 'Translated by CourseLingo' badge in the bottom-right corner."""
+    badge_w = 180.0
+    badge_h = 18.0
+    margin_right = 10.0
+    margin_bottom = 8.0
+
+    pw = page.rect.width
+    ph = page.rect.height
+
+    x0 = pw - badge_w - margin_right
+    y0 = ph - badge_h - margin_bottom
+    x1 = pw - margin_right
+    y1 = ph - margin_bottom
+
+    badge_rect = fitz.Rect(x0, y0, x1, y1)
+
+    # Light grey filled rectangle
+    page.draw_rect(badge_rect, color=None, fill=(0.93, 0.93, 0.93))
+
+    # Text inside, left-padded 6pt
+    text_rect = fitz.Rect(x0 + 6, y0, x1, y1)
+    page.insert_textbox(
+        text_rect,
+        "Translated by CourseLingo",
+        fontsize=7.0,
+        fontname="helv",
+        color=(0.53, 0.53, 0.53),
+        align=0,
+    )
+
+
 def build_translated_pdf(
     blocks: list[dict[str, Any]],
     page_dims: list[dict[str, float]],  # kept for call-site compatibility
     original_pdf_bytes: bytes,
+    watermark: bool = False,
 ) -> bytes:
     """
     Build a translated PDF by redacting original text and inserting
@@ -330,6 +363,11 @@ def build_translated_pdf(
                 continue
             noto_key, noto_file = block_fonts[i]
             _insert_text(page, safe_rects[i], text, noto_key, noto_file, fitted[i])
+
+    # Watermark badge (free tier only)
+    if watermark:
+        for page_idx in range(len(doc)):
+            _add_watermark_badge(doc[page_idx])
 
     buf = io.BytesIO()
     doc.save(buf)
