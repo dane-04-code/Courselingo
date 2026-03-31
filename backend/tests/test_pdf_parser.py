@@ -1,11 +1,12 @@
 """Tests for pdf_parser bullet-splitting logic."""
 
-import pytest
 from services.pdf_parser import _split_bullet_items
 
 
 def _line(text: str, y0: float = 0.0, y1: float = 12.0):
     """Minimal (text, bbox, spans) tuple for testing."""
+    # spans=[] is a deliberate simplification — real parser spans are complex.
+    # This is sufficient for testing bullet-splitting logic which only needs text & bbox.
     return (text, (0.0, y0, 100.0, y1), [])
 
 
@@ -36,6 +37,7 @@ def test_two_bullets_split_into_two_groups():
 
 
 def test_three_bullets_split_into_three_groups():
+    """Three bullet items produce three separate groups."""
     b1 = _line("• Bullet one", y0=0, y1=12)
     b2 = _line("• Bullet two", y0=14, y1=26)
     b3 = _line("• Bullet three", y0=28, y1=40)
@@ -74,6 +76,16 @@ def test_numbered_list_items_split():
     """Numbered list items (1. 2. etc.) also split correctly."""
     b1 = _line("1. First item", y0=0, y1=12)
     b2 = _line("2. Second item", y0=14, y1=26)
+    result = _split_bullet_items([b1, b2])
+    assert len(result) == 2
+    assert result[0] == [b1]
+    assert result[1] == [b2]
+
+
+def test_dash_bullet_items_split():
+    """Dash bullets (-) are also recognized as bullet markers."""
+    b1 = _line("- First item", y0=0, y1=12)
+    b2 = _line("- Second item", y0=14, y1=26)
     result = _split_bullet_items([b1, b2])
     assert len(result) == 2
     assert result[0] == [b1]
