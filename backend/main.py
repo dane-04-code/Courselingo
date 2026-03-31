@@ -149,9 +149,8 @@ async def estimate_characters(file: UploadFile = File(...)):
 
     if name.endswith(".pdf"):
         try:
-            doc = fitz.open(stream=content, filetype="pdf")
-            page_count = doc.page_count
-            doc.close()
+            with fitz.open(stream=content, filetype="pdf") as doc:
+                page_count = doc.page_count
             blocks = extract_text_blocks(content)
             total_chars = sum(len(b["text"]) for b in blocks)
         except Exception as exc:
@@ -169,10 +168,14 @@ async def estimate_characters(file: UploadFile = File(...)):
     else:
         raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported.")
 
-    try:
-        credits = _pages_to_credits(page_count)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    if name.endswith(".pdf"):
+        try:
+            credits = _pages_to_credits(page_count)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    else:
+        # DOCX: page_count is a rough estimate; cap credits at 4, don't hard-reject
+        credits = min(_pages_to_credits(min(page_count, 300)), 4)
 
     return {
         "char_count": total_chars,
@@ -235,9 +238,8 @@ async def translate_document(
     # Enforce 300-page cap for PDFs
     if is_pdf:
         try:
-            _doc = fitz.open(stream=file_bytes, filetype="pdf")
-            _page_count = _doc.page_count
-            _doc.close()
+            with fitz.open(stream=file_bytes, filetype="pdf") as _doc:
+                _page_count = _doc.page_count
             _pages_to_credits(_page_count)  # raises ValueError if > 300
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
