@@ -28,9 +28,19 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="PDF Translation API")
 
+_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+]
+_PRODUCTION_ORIGIN = os.getenv("FRONTEND_ORIGIN", "")
+if _PRODUCTION_ORIGIN:
+    _CORS_ORIGINS.append(_PRODUCTION_ORIGIN)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"],
+    allow_origins=_CORS_ORIGINS,
     allow_origin_regex=r"http://localhost:\d+",
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,7 +60,7 @@ DOCX_CONTENT_TYPES = {
 
 # ── File-type handlers ───────────────────────────────────────────────
 def _handle_pdf(
-    file_bytes: bytes, target_lang: str, api_key: str
+    file_bytes: bytes, target_lang: str, api_key: str, watermark: bool = False
 ) -> tuple[bytes, str, str]:
     """Parse → translate → rebuild a PDF. Returns (bytes, extension, media_type)."""
     try:
@@ -75,7 +85,7 @@ def _handle_pdf(
         raise HTTPException(status_code=500, detail=f"Unexpected error during translation: {exc}")
 
     try:
-        output = build_translated_pdf(translated_blocks, page_dims, file_bytes)
+        output = build_translated_pdf(translated_blocks, page_dims, file_bytes, watermark=watermark)
     except Exception as exc:
         logger.exception("PDF reconstruction failed")
         raise HTTPException(status_code=500, detail=f"Failed to build translated PDF: {exc}")
@@ -192,6 +202,10 @@ async def translate_document(
         str,
         Form(description="Target language code (e.g. DE, FR, ES, EN-US)"),
     ] = "EN-US",
+    watermark: Annotated[
+        bool,
+        Form(description="If true, add a CourseLingo watermark badge to PDF output"),
+    ] = False,
 ) -> Response:
     """
     Accept a PDF or DOCX upload, translate every text block via DeepL,
@@ -248,7 +262,7 @@ async def translate_document(
     if is_docx:
         output_bytes, out_ext, media = _handle_docx(file_bytes, target_lang, api_key)
     else:
-        output_bytes, out_ext, media = _handle_pdf(file_bytes, target_lang, api_key)
+        output_bytes, out_ext, media = _handle_pdf(file_bytes, target_lang, api_key, watermark=watermark)
 
     # 6) Build safe filename & return
     raw_name = file.filename or "document"
