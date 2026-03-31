@@ -1,6 +1,8 @@
 """Tests for pdf_parser bullet-splitting logic."""
 
-from services.pdf_parser import _split_bullet_items
+import io
+import fitz
+from services.pdf_parser import _split_bullet_items, extract_text_blocks
 
 
 def _line(text: str, y0: float = 0.0, y1: float = 12.0):
@@ -95,3 +97,77 @@ def test_dash_bullet_items_split():
 def test_empty_input_returns_empty():
     result = _split_bullet_items([])
     assert result == []
+
+
+# ── Integration tests using real PDFs ────────────────────────────────
+
+
+def _make_bullet_pdf() -> bytes:
+    """Create a single-page PDF with three bullet items at consistent spacing.
+
+    All three bullets have the same inter-line gap (14pt top-to-top),
+    which is the pathological case where paragraph-break detection alone
+    cannot split them — requiring _split_bullet_items to do it.
+    """
+    buf = io.BytesIO()
+    with fitz.open() as doc:
+        page = doc.new_page(width=612, height=792)
+        y = 100.0
+        line_height = 14.0
+        items = [
+            "- First bullet item with some text",
+            "- Second bullet item with some text",
+            "- Third bullet item with some text",
+        ]
+        for item in items:
+            page.insert_text((72, y), item, fontsize=10)
+            y += line_height
+        doc.save(buf)
+    return buf.getvalue()
+
+
+def test_bullet_items_are_separate_blocks():
+    """Each bullet item must produce its own TextBlock."""
+    pdf_bytes = _make_bullet_pdf()
+    blocks = extract_text_blocks(pdf_bytes)
+
+    bullet_blocks = [b for b in blocks if b["text"].startswith("-")]
+    assert len(bullet_blocks) == 3, (
+        f"Expected 3 separate bullet TextBlocks, got {len(bullet_blocks)}: "
+        + str([b['text'][:40] for b in bullet_blocks])
+    )
+
+
+def test_bullet_blocks_have_distinct_y_ranges():
+    """Each bullet block must occupy a distinct vertical slice."""
+    pdf_bytes = _make_bullet_pdf()
+    blocks = extract_text_blocks(pdf_bytes)
+    bullet_blocks = sorted(
+        [b for b in blocks if b["text"].startswith("-")],
+        key=lambda b: b["y0"],
+    )
+    assert len(bullet_blocks) == 3
+    for i in range(len(bullet_blocks) - 1):
+        assert bullet_blocks[i]["y1"] <= bullet_blocks[i + 1]["y0"] + 1, (
+            f"Block {i} y1={bullet_blocks[i]['y1']} overlaps block {i+1} "
+            f"y0={bullet_blocks[i+1]['y0']}"
+        )
+
+
+def test_bullet_continuation_lines_stay_with_parent():
+    """A wrapped bullet line must stay in the same TextBlock as its bullet."""
+    buf = io.BytesIO()
+    with fitz.open() as doc:
+        page = doc.new_page(width=612, height=792)
+        page.insert_text((72, 100), "- First bullet item", fontsize=10)
+        page.insert_text((72, 114), "  continuation of first bullet", fontsize=10)
+        page.insert_text((72, 128), "- Second bullet item", fontsize=10)
+        doc.save(buf)
+    pdf_bytes = buf.getvalue()
+    blocks = extract_text_blocks(pdf_bytes)
+    bullet_blocks = [b for b in blocks if "bullet" in b["text"]]
+    # "First bullet item continuation of first bullet" should be one block
+    first = next(b for b in bullet_blocks if "First" in b["text"])
+    assert "continuation" in first["text"], (
+        f"Continuation line not merged into first bullet: {first['text']!r}"
+    )
