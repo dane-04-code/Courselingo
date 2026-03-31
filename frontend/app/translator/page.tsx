@@ -89,6 +89,8 @@ export default function TranslatorPage() {
   const [history, setHistory]                   = useState<HistoryItem[]>([]);
   const [credits, setCredits]                   = useState<number | null>(null);
   const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
+  const [pageCount, setPageCount]               = useState<number | null>(null);
+  const [userPlan, setUserPlan]                 = useState<string>("free");
 
   const inputRef         = useRef<HTMLInputElement>(null);
   const langSelectRef    = useRef<HTMLSelectElement>(null);
@@ -122,7 +124,7 @@ export default function TranslatorPage() {
     const [creditsRes, historyRes] = await Promise.all([
       supabase
         .from("user_credits")
-        .select("credits_remaining")
+        .select("credits_remaining, plan")
         .eq("user_id", u.id)
         .single(),
       supabase
@@ -133,7 +135,10 @@ export default function TranslatorPage() {
         .limit(50),
     ]);
 
-    if (creditsRes.data) setCredits(creditsRes.data.credits_remaining);
+    if (creditsRes.data) {
+      setCredits(creditsRes.data.credits_remaining);
+      setUserPlan(creditsRes.data.plan ?? "free");
+    }
     if (historyRes.data) setHistory(historyRes.data);
   }, [supabase]);
 
@@ -144,7 +149,7 @@ export default function TranslatorPage() {
 
   // Estimate credit cost whenever a new file is selected
   useEffect(() => {
-    if (!file) { setEstimatedCredits(null); return; }
+    if (!file) { setEstimatedCredits(null); setPageCount(null); return; }
     const controller = new AbortController();
     const form = new FormData();
     form.append("file", file);
@@ -154,7 +159,10 @@ export default function TranslatorPage() {
       signal: controller.signal,
     })
       .then((r) => r.json())
-      .then((d) => setEstimatedCredits(d.credits_required ?? null))
+      .then((d) => {
+        setEstimatedCredits(d.credits_required ?? null);
+        setPageCount(d.page_count ?? null);
+      })
       .catch(() => {}); // best-effort — don't block the UI
     return () => controller.abort();
   }, [file]);
@@ -242,6 +250,10 @@ export default function TranslatorPage() {
 
   const handleTranslate = useCallback(async () => {
     if (!file) return;
+    if (credits !== null && estimatedCredits !== null && credits < estimatedCredits) {
+      setErrorMsg(`You need ${estimatedCredits} credit${estimatedCredits !== 1 ? "s" : ""} but only have ${credits}. Buy more credits to continue.`);
+      return;
+    }
     setStatus("uploading");
     setErrorMsg("");
     startFakeProgress();
@@ -250,6 +262,7 @@ export default function TranslatorPage() {
       const form = new FormData();
       form.append("file", file);
       form.append("target_lang", language);
+      form.append("watermark", userPlan === "free" ? "true" : "false");
 
       const res = await axios.post(`${API_URL}/translate`, form, {
         responseType: "blob",
@@ -267,6 +280,20 @@ export default function TranslatorPage() {
       const cd    = res.headers["content-disposition"] ?? "";
       const match = cd.match(/filename="?([^"]+)"?/);
       setDownloadName(match?.[1] ?? "translated.pdf");
+
+      // Deduct credits atomically
+      const creditsToDeduct = estimatedCredits ?? 1;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        await supabase.rpc("deduct_credit", {
+          p_user_id:         currentUser.id,
+          p_filename:        file.name,
+          p_output_filename: match?.[1] ?? "translated.pdf",
+          p_target_lang:     language,
+          p_file_size_bytes: file.size,
+          p_amount:          creditsToDeduct,
+        });
+      }
 
       setStatus("done");
       setTimeout(() => setModalDone(true), 600);
@@ -291,7 +318,7 @@ export default function TranslatorPage() {
       }
       setStatus("error");
     }
-  }, [file, language, startFakeProgress, fetchCreditsAndHistory]);
+  }, [file, language, credits, estimatedCredits, userPlan, supabase, startFakeProgress, fetchCreditsAndHistory]);
 
   /* ─── derived ─────────────────────────────────────────────────────────── */
   const selectedLang  = LANGUAGES.find((l) => l.code === language);
@@ -415,8 +442,17 @@ export default function TranslatorPage() {
 
           {/* Credit cost estimate */}
           <div className="tr-estimate-row">
-            <span>Credit cost</span>
-            <span className="tr-estimate-cost">
+            <span>
+              {pageCount !== null ? `Pages: ${pageCount} · Credit cost` : "Credit cost"}
+            </span>
+            <span
+              className="tr-estimate-cost"
+              style={
+                credits !== null && estimatedCredits !== null && credits < estimatedCredits
+                  ? { color: "#e05a3a" }
+                  : undefined
+              }
+            >
               {file
                 ? estimatedCredits === null
                   ? "Estimating…"
