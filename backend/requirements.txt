@@ -5,3 +5,4 @@ deepl
 python-multipart
 reportlab
 python-dotenv
+python-docx
