@@ -137,7 +137,8 @@ nav {
   min-height: 100vh;
   display: flex; align-items: center;
   padding: 8rem 2rem 5rem;
-  max-width: 1100px; margin: 0 auto;
+  max-width: 1400px; margin: 0;
+  padding-left: clamp(2rem, 6vw, 8rem);
   gap: 4rem;
 }
 
@@ -163,9 +164,9 @@ nav {
 
 h1 {
   font-family: var(--font-fraunces), 'Fraunces', serif;
-  font-size: clamp(2.8rem, 5vw, 4.2rem);
+  font-size: clamp(3.6rem, 6.5vw, 5.6rem);
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.05;
   color: var(--ink);
   margin-bottom: 1.5rem;
 }
