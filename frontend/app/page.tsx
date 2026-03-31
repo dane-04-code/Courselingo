@@ -48,6 +48,30 @@ export default function Home() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [downloadName, setDownloadName] = useState("translated.pdf");
   const [dragging, setDragging] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+
+  const handleCheckout = useCallback(async (plan: string) => {
+    setCheckoutLoading(plan);
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      if (res.status === 401) {
+        window.location.href = "/signup";
+        return;
+      }
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      // silent — button stops spinning
+    } finally {
+      setCheckoutLoading(null);
+    }
+  }, []);
 
   /* modal progress */
   const [showModal, setShowModal] = useState(false);
@@ -613,52 +637,74 @@ export default function Home() {
           No subscriptions. No monthly fees. Pay per document, or save with a pack.
         </p>
         <div className="pricing-grid">
+          {/* Single */}
+          <div className="price-card">
+            <div className="price-name">Single</div>
+            <div className="price-amount">£12</div>
+            <div className="price-desc">1 credit · one-time</div>
+            <ul className="price-features">
+              <li>1 credit included</li>
+              <li>Up to 25 pages</li>
+              <li>19 languages</li>
+              <li>Layout &amp; fonts preserved</li>
+              <li>Download instantly</li>
+            </ul>
+            <button className="btn-outline" onClick={() => handleCheckout("single")} disabled={checkoutLoading !== null}>
+              {checkoutLoading === "single" ? "Loading…" : "Get started"}
+            </button>
+          </div>
           {/* Starter */}
           <div className="price-card">
             <div className="price-name">Starter</div>
-            <div className="price-amount">$9</div>
+            <div className="price-amount">£32</div>
             <div className="price-desc">3 credits · one-time</div>
             <ul className="price-features">
               <li>3 credits included</li>
-              <li>1 credit = 1 short document</li>
+              <li>Up to 75 pages per credit</li>
               <li>19 languages</li>
-              <li>Layout & fonts preserved</li>
-              <li>Download instantly</li>
+              <li>Layout &amp; fonts preserved</li>
+              <li>Credits never expire</li>
             </ul>
-            <button className="btn-outline">Get started</button>
+            <button className="btn-outline" onClick={() => handleCheckout("starter")} disabled={checkoutLoading !== null}>
+              {checkoutLoading === "starter" ? "Loading…" : "Buy starter"}
+            </button>
           </div>
           {/* Course Pack */}
           <div className="price-card featured">
             <div className="price-tag">Most popular</div>
             <div className="price-name">Course Pack</div>
-            <div className="price-amount">$49</div>
+            <div className="price-amount">£69</div>
+            <div className="price-desc">7 credits · one-time</div>
+            <ul className="price-features">
+              <li>7 credits included</li>
+              <li>Best for multi-language launches</li>
+              <li>19 languages</li>
+              <li>Layout &amp; fonts preserved</li>
+              <li>Credits never expire</li>
+            </ul>
+            <button className="btn-primary-sm" onClick={() => handleCheckout("course_pack")} disabled={checkoutLoading !== null}>
+              {checkoutLoading === "course_pack" ? "Loading…" : "Get the pack"}
+            </button>
+          </div>
+          {/* Full Bundle */}
+          <div className="price-card">
+            <div className="price-name">Full Bundle</div>
+            <div className="price-amount">£129</div>
             <div className="price-desc">15 credits · one-time</div>
             <ul className="price-features">
               <li>15 credits included</li>
-              <li>Best for multi-language launches</li>
-              <li>19 languages</li>
-              <li>Layout & fonts preserved</li>
-              <li>Credits never expire</li>
-            </ul>
-            <button className="btn-primary-sm">Get the pack</button>
-          </div>
-          {/* Pro Pack */}
-          <div className="price-card">
-            <div className="price-name">Pro Pack</div>
-            <div className="price-amount">$99</div>
-            <div className="price-desc">40 credits · one-time</div>
-            <ul className="price-features">
-              <li>40 credits included</li>
               <li>Best value per credit</li>
               <li>19 languages</li>
-              <li>Layout & fonts preserved</li>
+              <li>Layout &amp; fonts preserved</li>
               <li>Credits never expire</li>
             </ul>
-            <button className="btn-outline">Get the pro pack</button>
+            <button className="btn-outline" onClick={() => handleCheckout("full_bundle")} disabled={checkoutLoading !== null}>
+              {checkoutLoading === "full_bundle" ? "Loading…" : "Get the bundle"}
+            </button>
           </div>
         </div>
         <p style={{ textAlign: "center", fontSize: "0.82rem", color: "var(--ink-light)", marginTop: "1.5rem" }}>
-          Credit cost scales with document size — short docs (≤20k chars) cost 1 credit · large docs (120k+) cost 6 credits.
+          Credit cost scales with document size — 1–25 pages costs 1 credit · up to 300 pages costs 4 credits.
         </p>
       </section>
 
