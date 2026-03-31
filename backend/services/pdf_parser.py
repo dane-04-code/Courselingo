@@ -36,6 +36,45 @@ def _dominant_font(spans: list[dict[str, Any]]) -> tuple[str, float]:
     return best.get("font", "Helvetica"), best.get("size", 12.0)
 
 
+def _split_bullet_items(
+    line_data: list[tuple[str, tuple, list]],
+) -> list[list[tuple[str, tuple, list]]]:
+    """Split a list of lines into per-bullet-item sub-groups.
+
+    Lines that match _LIST_ITEM_RE begin a new group.  Continuation lines
+    (no bullet marker) are appended to the current group.  Non-bullet lines
+    that appear before the first bullet become their own single-line group.
+    If no bullet markers are found, the original list is returned as-is
+    (one group) to preserve existing behaviour for plain paragraphs.
+    """
+    if not line_data:
+        return []
+
+    has_bullets = any(_LIST_ITEM_RE.match(lt) for lt, _, _ in line_data)
+    if not has_bullets:
+        return [line_data]
+
+    groups: list[list[tuple[str, tuple, list]]] = []
+    current: list[tuple[str, tuple, list]] = []
+
+    for line in line_data:
+        lt, bbox, spans = line
+        if _LIST_ITEM_RE.match(lt):
+            if current:
+                groups.append(current)
+            current = [line]
+        else:
+            if current:
+                current.append(line)
+            else:
+                # Non-bullet line before any bullet item
+                groups.append([line])
+    if current:
+        groups.append(current)
+
+    return groups
+
+
 def extract_text_blocks(pdf_bytes: bytes) -> list[dict[str, Any]]:
     """
     Open a PDF from raw bytes and return a list of text-block dicts.
