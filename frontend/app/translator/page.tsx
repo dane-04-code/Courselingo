@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect, type DragEvent, type ChangeEv
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { createClient } from "@/lib/supabase/client";
+import ProfilePopup from "./ProfilePopup";
 
 /* ─── constants ─────────────────────────────────────────────────────────── */
 
@@ -335,17 +336,11 @@ export default function TranslatorPage() {
           Course<span className="logo-dot">Lingo</span>
         </a>
         <div className="translator-header-right">
-          <div className="user-avatar" title={user?.email ?? ""}>
-            <span>{user?.email?.slice(0, 2).toUpperCase() ?? "?"}</span>
-          </div>
-          <button
-            type="button"
-            className="signout-link"
-            onClick={handleSignOut}
-            style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
-          >
-            Sign out
-          </button>
+          <ProfilePopup
+            email={user?.email ?? ""}
+            credits={credits}
+            onSignOut={handleSignOut}
+          />
         </div>
       </header>
 
