@@ -14,6 +14,7 @@
   --sage-pale: #EBF2EB;
   --terracotta: #C4684F;
   --terracotta-light: #E8967F;
+  --terracotta-dark: #b05a42;
   --gold: #C9A84C;
   --border: #E5DDD5;
   --shadow: rgba(26,23,20,0.08);
@@ -1109,7 +1110,7 @@ footer a { color: inherit; text-decoration: none; }
 }
 
 .profile-popup-topup:hover {
-  background: #b05a42;
+  background: var(--terracotta-dark);
 }
 
 .profile-popup-actions {
