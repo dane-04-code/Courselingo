@@ -1029,6 +1029,112 @@ footer a { color: inherit; text-decoration: none; }
   color: var(--ink);
 }
 
+/* ─── Profile Popup ──────────────────────────────────────────────────────── */
+
+.user-avatar {
+  cursor: pointer;
+}
+
+.profile-popup-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.profile-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 240px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.profile-popup-header {
+  padding: 0.9rem 1rem;
+  background: var(--cream);
+  border-bottom: 1px solid var(--border);
+}
+
+.profile-popup-email {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.profile-popup-credits-section {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.profile-popup-credits-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-popup-credits-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sage);
+}
+
+.profile-popup-credits-num {
+  font-family: var(--font-fraunces), 'Fraunces', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.profile-popup-topup {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: white;
+  background: var(--terracotta);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  text-decoration: none;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.profile-popup-topup:hover {
+  background: #b05a42;
+}
+
+.profile-popup-actions {
+  padding: 0.5rem;
+}
+
+.profile-popup-signout {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--terracotta);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+
+.profile-popup-signout:hover {
+  background: var(--cream);
+}
+
 /* ─── Main area ──────────────────────────────────────────────────────────── */
 
 .translator-main {
