@@ -11,12 +11,18 @@ interface ProfilePopupProps {
 export default function ProfilePopup({ email, credits, onSignOut }: ProfilePopupProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+
+  function closePopup() {
+    setOpen(false);
+    triggerRef.current?.focus();
+  }
 
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        closePopup();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -26,7 +32,13 @@ export default function ProfilePopup({ email, credits, onSignOut }: ProfilePopup
   const initials = email ? email.slice(0, 2).toUpperCase() : "?";
 
   return (
-    <div className="profile-popup-wrapper" ref={wrapperRef}>
+    <div
+      className="profile-popup-wrapper"
+      ref={wrapperRef}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") closePopup();
+      }}
+    >
       <div
         className="user-avatar"
         role="button"
@@ -34,20 +46,21 @@ export default function ProfilePopup({ email, credits, onSignOut }: ProfilePopup
         title={email}
         aria-label="Profile menu"
         aria-expanded={open}
+        aria-haspopup="true"
+        ref={triggerRef}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             setOpen((o) => !o);
           }
-          if (e.key === "Escape") setOpen(false);
         }}
       >
         <span>{initials}</span>
       </div>
 
       {open && (
-        <div className="profile-popup" role="menu">
+        <div className="profile-popup">
           <div className="profile-popup-header">
             <div className="profile-popup-email">{email}</div>
           </div>
@@ -61,7 +74,7 @@ export default function ProfilePopup({ email, credits, onSignOut }: ProfilePopup
             <a
               href="/#pricing"
               className="profile-popup-topup"
-              onClick={() => setOpen(false)}
+              onClick={() => closePopup()}
             >
               Top up →
             </a>
@@ -71,7 +84,7 @@ export default function ProfilePopup({ email, credits, onSignOut }: ProfilePopup
               className="profile-popup-signout"
               type="button"
               onClick={() => {
-                setOpen(false);
+                closePopup();
                 onSignOut();
               }}
             >
