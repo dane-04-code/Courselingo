@@ -266,14 +266,12 @@ export default function Home() {
           <div className="hero-text">
             <div className="hero-badge">
               <span className="hero-badge-dot" />
-              PDF &amp; DOCX translation for course creators
+              Stop losing international students
             </div>
             <h1>
-              Your course,
+              Sell your course
               <br />
-              in <em>every</em>
-              <br />
-              language.
+              to the <em>world.</em>
             </h1>
             <p className="hero-sub">
               Upload your workbook, slides, or handout. Get back a perfectly
@@ -413,7 +411,7 @@ export default function Home() {
           New language.
         </h2>
         <p className="section-sub">
-          Every heading, paragraph, and bullet point translated precisely — your branding stays completely intact.
+          Your course, translated and ready to sell — every heading, paragraph, and bullet point done precisely, branding completely intact.
         </p>
 
         <div className="example-comparison">
@@ -640,7 +638,7 @@ export default function Home() {
           {/* Single */}
           <div className="price-card">
             <div className="price-name">Single</div>
-            <div className="price-amount">£12</div>
+            <div className="price-amount">$12</div>
             <div className="price-desc">1 credit · one-time</div>
             <ul className="price-features">
               <li>1 credit included</li>
@@ -656,7 +654,7 @@ export default function Home() {
           {/* Starter */}
           <div className="price-card">
             <div className="price-name">Starter</div>
-            <div className="price-amount">£32</div>
+            <div className="price-amount">$32</div>
             <div className="price-desc">3 credits · one-time</div>
             <ul className="price-features">
               <li>3 credits included</li>
@@ -673,7 +671,7 @@ export default function Home() {
           <div className="price-card featured">
             <div className="price-tag">Most popular</div>
             <div className="price-name">Course Pack</div>
-            <div className="price-amount">£69</div>
+            <div className="price-amount">$69</div>
             <div className="price-desc">7 credits · one-time</div>
             <ul className="price-features">
               <li>7 credits included</li>
@@ -689,7 +687,7 @@ export default function Home() {
           {/* Full Bundle */}
           <div className="price-card">
             <div className="price-name">Full Bundle</div>
-            <div className="price-amount">£129</div>
+            <div className="price-amount">$129</div>
             <div className="price-desc">15 credits · one-time</div>
             <ul className="price-features">
               <li>15 credits included</li>
@@ -705,6 +703,9 @@ export default function Home() {
         </div>
         <p style={{ textAlign: "center", fontSize: "0.82rem", color: "var(--ink-light)", marginTop: "1.5rem" }}>
           Credit cost scales with document size — 1–25 pages costs 1 credit · up to 300 pages costs 4 credits.
+        </p>
+        <p style={{ textAlign: "center", fontSize: "0.78rem", color: "var(--ink-light)", marginTop: "0.5rem", opacity: 0.7 }}>
+          Results may vary depending on PDF design complexity. We recommend reviewing your translated document before distributing.
         </p>
       </section>
 
